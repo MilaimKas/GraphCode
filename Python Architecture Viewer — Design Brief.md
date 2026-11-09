@@ -56,8 +56,10 @@ Our own extractor (~250 lines), built on Python's `ast`.
   1. bare names → same-module definitions or `from x import name` imports within the package;
   2. `module.func` where `module` is an imported package module;
   3. `self.method()` → methods of the enclosing class or its in-package bases (any file);
-  4. `ClassName(...)` → the class / its `__init__`;
+  4. `ClassName(...)` → its `__init__` if the class or an in-package base defines one (that is what the tracer records), else the class itself (e.g. a dataclass); `super().method()` → the method in an in-package base;
   5. *type tracking* (tagged `inferred`): local variables built from a class (`dag = DAG(); dag.add_node()`), `self.attr` typed by assignment or annotation (`__init__(self, dag: DAG)`), and annotated return types.
+- **Decorators give no call edge.** `@timed` runs once at import, not on each call, so it is not credited to anyone; the decorator line stays visible in the function's span.
+- **Calls inside lambdas and comprehensions** are credited to the enclosing `def` (they are not nodes).
 - **Known limit:** polymorphic calls (`node.noise.sample()`) stay unresolved. The static graph is partial by design; traces (Stage 2) measure the gap.
 - **Source reader:** the extractor takes a function `path → text`, not the disk directly. On the working tree it reads files; for another git ref it uses `git show <ref>:<path>` (see PR diff).
 - **Graphify as reference:** a test runs `graphify extract --code-only` on the fixture and checks that our call edges include Graphify's. Skipped when `graphify` is not on the PATH. Context: on DataGenerator, Graphify's 69 EXTRACTED calls matched a 125-line naive resolver almost exactly; its value was in 28 INFERRED edges (the `DAG` seam), which rule 5 reproduces.
@@ -223,6 +225,7 @@ GraphCode/
 │   │   ├── serialization.py # graph.json read/write
 │   │   ├── definitions.py   # definitions, kinds, spans, containment
 │   │   ├── imports.py       # import edges, module table
+│   │   ├── names.py         # symbol table: scopes, name lookup, bases, annotations
 │   │   ├── calls.py         # call resolution rules 1–5
 │   │   ├── public_api.py    # milestone 3
 │   │   └── exceptions.py    # milestone 3

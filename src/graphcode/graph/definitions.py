@@ -33,7 +33,7 @@ from graphcode.keys import InvalidKeyError, NodeKey, module_name_from_path
 SourceReader = Callable[[str], str]
 """Function returning the text of a file, given its project-relative path."""
 
-_DefinitionStatement = ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+DefinitionStatement = ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
 
 
 class ExtractionError(Exception):
@@ -171,7 +171,7 @@ def _collect_scope(
         Nodes collected so far; updated in place.
     """
     inside_function = scope_kind in (NodeKind.FUNCTION, NodeKind.METHOD)
-    for statement in _statements_of_scope(body):
+    for statement in definitions_of_scope(body):
         key = scope_key.child(statement.name, inside_function=inside_function)
         kind = _definition_kind(statement, scope_kind)
         span = LineSpan(_first_line(statement), statement.end_lineno or statement.lineno)
@@ -181,7 +181,7 @@ def _collect_scope(
         _collect_scope(statement.body, key, kind, path, drafts)
 
 
-def _statements_of_scope(body: list[ast.stmt]) -> Iterator[_DefinitionStatement]:
+def definitions_of_scope(body: list[ast.stmt]) -> Iterator[DefinitionStatement]:
     """Yield the definitions of a scope, looking inside non-scope blocks.
 
     ``if``, ``try``, ``with``, ``for``, ``while`` and ``match`` do not create a
@@ -189,17 +189,17 @@ def _statements_of_scope(body: list[ast.stmt]) -> Iterator[_DefinitionStatement]
     Class and function bodies do create one and are not entered here.
     """
     for statement in body:
-        if isinstance(statement, _DefinitionStatement):
+        if isinstance(statement, DefinitionStatement):
             yield statement
             continue
         for child in ast.iter_child_nodes(statement):
             if isinstance(child, ast.stmt):
-                yield from _statements_of_scope([child])
+                yield from definitions_of_scope([child])
             elif isinstance(child, (ast.ExceptHandler, ast.match_case)):
-                yield from _statements_of_scope(child.body)
+                yield from definitions_of_scope(child.body)
 
 
-def _definition_kind(statement: _DefinitionStatement, scope_kind: NodeKind) -> NodeKind:
+def _definition_kind(statement: DefinitionStatement, scope_kind: NodeKind) -> NodeKind:
     """Return CLASS, METHOD (a def directly in a class) or FUNCTION."""
     if isinstance(statement, ast.ClassDef):
         return NodeKind.CLASS
@@ -208,6 +208,6 @@ def _definition_kind(statement: _DefinitionStatement, scope_kind: NodeKind) -> N
     return NodeKind.FUNCTION
 
 
-def _first_line(statement: _DefinitionStatement) -> int:
+def _first_line(statement: DefinitionStatement) -> int:
     """Return the line of the first decorator, or of the definition itself."""
     return min([statement.lineno] + [decorator.lineno for decorator in statement.decorator_list])
