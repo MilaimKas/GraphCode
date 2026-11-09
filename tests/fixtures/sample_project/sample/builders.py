@@ -3,13 +3,13 @@
 Covers: a decorated function (span starts at the decorator), a nested
 function, a class defined inside a function (``f.<locals>.Class.method``), a
 lambda (must not become a node), calls on a local variable built from a class
-(inferred edges), cross-module calls through ``from ... import``.
+(inferred edges), cross-module calls through ``from ... import``, an import
+inside a function (``build_noisy``).
 """
 
 from __future__ import annotations
 
 from sample.core import Graph
-from sample.noise.gaussian import GaussianNoise
 from sample.utils import timed
 
 
@@ -39,6 +39,7 @@ def build_chain(names: list[str]) -> Graph:
 
 def build_noisy(name: str) -> Graph:
     """Build a one-node graph whose node carries Gaussian noise."""
+    from sample.noise.gaussian import GaussianNoise
 
     class Labeller:
         def label(self, text: str) -> str:

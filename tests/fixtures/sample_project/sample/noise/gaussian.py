@@ -1,12 +1,13 @@
 """Gaussian noise model.
 
 Covers: inheritance across files, ``super().__init__`` call, a call to a
-method inherited from the base class in another file (``self.sample_many``).
+method inherited from the base class in another file (``self.sample_many``),
+a relative import.
 """
 
 from __future__ import annotations
 
-from sample.noise.base import Noise
+from .base import Noise
 
 
 class GaussianNoise(Noise):
