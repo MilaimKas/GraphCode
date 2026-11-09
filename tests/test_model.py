@@ -20,7 +20,12 @@ from graphcode.graph.model import (
     Node,
     NodeKind,
 )
-from graphcode.graph.serialization import graph_from_dict, graph_to_dict, read_graph, write_graph
+from graphcode.graph.serialization import (
+    graph_from_dict,
+    graph_to_dict,
+    read_graph,
+    write_graph,
+)
 from graphcode.keys import NodeKey
 
 PACKAGE = NodeKey("pkg")
@@ -131,11 +136,11 @@ def test_class_cannot_be_root() -> None:
         make_graph(nodes=nodes)
 
 
-def test_include_module_can_be_root() -> None:
-    """A top-level module of an include folder (scripts/run.py) is a root."""
-    script = Node(NodeKey("run"), NodeKind.MODULE, "scripts/run.py", (LineSpan(1, 10),), None)
-    graph = make_graph(nodes=make_nodes() + [script])
-    assert graph.node_by_key()[NodeKey("run")].parent is None
+def test_module_can_be_root() -> None:
+    """A module outside any package (folder without __init__.py) is a root."""
+    loose = Node(NodeKey("loose"), NodeKind.MODULE, "loose.py", (LineSpan(1, 10),), None)
+    graph = make_graph(nodes=make_nodes() + [loose])
+    assert graph.node_by_key()[NodeKey("loose")].parent is None
 
 
 # --- reading and writing -----------------------------------------------------

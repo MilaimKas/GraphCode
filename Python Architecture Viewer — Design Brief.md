@@ -10,7 +10,8 @@ Build a local, free viewer that shows how a Python codebase fits together and ho
 - **Users:** me and a small team, on small to medium personal projects.
 - **Runs locally:** no hosted service, no code leaves the machine, no LLM needed.
 - **Own extractor, validated against Graphify:** structure comes from our own `ast`-based extractor. Graphify is not a dependency; it is used only as a reference in a test (see Stage 1).
-- **Out of scope for now:** multi-language support, huge codebases, LLM-based semantic links, tests and notebooks in the graph, tracing pytest tests, async code, full variable tracking.
+- **Out of scope for now:** multi-language support, huge codebases, LLM-based semantic links, anything outside the main package in the graph (tests, scripts, notebooks), tracing pytest tests, async code, full variable tracking.
+- **Assumption: the analysed package is well structured.** Pathological code (a name redefined in the same scope, `global` definitions inside functions, dead `while False:` blocks, folders without `__init__.py`) gets a reasonable default, not special handling.
 
 ## Architecture
 
@@ -49,7 +50,7 @@ The only contract between stages is a node key `module.path:Qualname`, e.g. `dat
 
 Our own extractor (~250 lines), built on Python's `ast`.
 
-- **Scope:** only the configured `package`, plus optional `include` folders (e.g. `scripts`). Tests and notebooks are excluded. Calls and imports to code outside the package (stdlib, numpy, …) are dropped.
+- **Scope:** only the configured `package` (in `src/<package>/` or a flat `<package>/`). Tests, scripts, notebooks and similar folders are ignored entirely. Calls and imports to code outside the package (stdlib, numpy, …) are dropped.
 - **Extracts:** definitions (with kind, start and end line, parent), containment, imports, inheritance, and calls.
 - **Call resolution rules:**
   1. bare names → same-module definitions or `from x import name` imports within the package;
@@ -80,7 +81,8 @@ Our own extractor (~250 lines), built on Python's `ast`.
 - `kind` (node): `package`, `module`, `class`, `method`, `function`. Later milestones add `public`, `raises`, `catches`.
 - `kind` (edge): `calls`, `imports`, `inherits`. Containment is the `parent` field, not an edge.
 - **One edge per `(source, target, kind)`**, with `lines` listing every occurrence. Moving a call to another line changes `lines`, not the edge, so the PR diff ignores it. `confidence` is `exact` if any occurrence is exact, else `inferred`.
-- **Containment rule:** a node's `parent` is its key minus the last level (`pkg.mod:DAG.add_node` → `pkg.mod:DAG` → `pkg.mod` → `pkg`; `<locals>` is skipped). Roots have `parent: null`: the analysed package and top-level modules of `include` folders. The rule makes cycles impossible.
+- **Containment rule:** a node's `parent` is its key minus the last level (`pkg.mod:DAG.add_node` → `pkg.mod:DAG` → `pkg.mod` → `pkg`; `<locals>` is skipped). The root is the analysed package, with `parent: null`. The rule makes cycles impossible.
+- **Redefinitions:** a name defined twice in the same scope keeps one node, of the kind of the *last* definition (the one that exists at run time), with the spans of both.
 - `dirty: true` when built from uncommitted changes. Readers check `schema_version` and fail clearly on mismatch.
 - In code: `Node` / `Edge` dataclasses. networkx is used only for algorithms (cycles, reachability) via a conversion function, not as the internal model.
 
@@ -191,7 +193,6 @@ uv run graphcode diff main..feature-x  # any two refs
   ```toml
   [tool.graphcode]
   package = "datagenerator"          # import name, required
-  include = ["scripts"]              # extra folders, optional
   exclude = ["datagenerator/legacy"] # optional
 
   [tool.graphcode.scenarios]         # used from milestone 4
@@ -199,7 +200,7 @@ uv run graphcode diff main..feature-x  # any two refs
   load = { target = "datagenerator.dag:load", args = ["x.json"] }
   ```
 
-  Scenario values use the CLI target syntax. Milestone 1 reads only `package`, `include`, `exclude`.
+  Scenario values use the CLI target syntax. Milestone 1 reads only `package` and `exclude`. Scenario functions live outside the package (e.g. `scripts/`): they are run, never drawn.
 - **Commands:** `graphcode build-graph`, `graphcode view`, `graphcode diff <ref>[..<ref>]`, `graphcode trace <target> [--args ...] [--kwargs ...] [--name ...] [-- argv...]`, `graphcode trace @<scenario>`, `graphcode trace --all`.
 - **Output:** everything generated goes in `.graphcode/` in the target project, git-ignored unless the team wants to share traces.
 

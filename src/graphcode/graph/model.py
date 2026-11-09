@@ -88,7 +88,8 @@ class Node:
         Line ranges of the definition, sorted. Usually one; several when the
         same key is defined more than once (property setter, ``@overload``).
     parent : NodeKey or None
-        Key of the containing node; None only for the top-level package.
+        Key of the containing node; None for a root (the analysed package,
+        or a module outside any extracted package).
     """
 
     key: NodeKey
@@ -184,7 +185,7 @@ class ArchitectureGraph:
     nodes : tuple of Node
         All nodes, keys unique. A node's parent is its key minus the last
         level (``NodeKey.parent_key``), or None for a root: the analysed
-        package, or a top-level module of an ``include`` folder.
+        package, or a module in a folder without ``__init__.py``.
     edges : tuple of Edge
         All edges, unique by ``(source, target, kind)``; both ends must be
         nodes of this graph.
