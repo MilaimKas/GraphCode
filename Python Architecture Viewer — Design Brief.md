@@ -108,7 +108,7 @@ Our own extractor (~250 lines), built on Python's `ast`.
   ```
 
   The scenario function itself is outside the package, so its calls appear as root steps.
-- **Child process:** the target runs in `python -m graphcode.trace.runner` with the project's interpreter (`sys.executable`), never inside the CLI process. Each scenario gets a fresh interpreter (reproducible `--all` runs), `sys.exit` or crashes cannot lose the trace, and the trace is written in a `finally`.
+- **Child process:** the target runs in `python -m graphcode.trace.runner` with the project's interpreter (`sys.executable`), never inside the CLI process. Each scenario gets a fresh interpreter (reproducible `--all` runs). Exceptions, `sys.exit` and Ctrl-C cannot lose the trace: they are caught and named in `error`. A hard kill (`os._exit`, a crash inside C code) writes nothing and is reported as such.
 - **Generators:** a resume is a continuation of the original call, not a new step. Async code is detected and reported as unsupported.
 - **Noise control:** consecutive sibling calls with identical subtrees collapse into one step with `count = N`. Hard cap of 50,000 steps sets `truncated: true`. Both configurable.
 - **Output:** `.graphcode/traces/<scenario>.json` (milestone 2), `.graphcode/traces/<scenario>/<commit>.json` (milestone 5).

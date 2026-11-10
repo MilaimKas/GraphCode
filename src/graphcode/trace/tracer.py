@@ -356,7 +356,8 @@ def record_trace(
     RecordedTrace
         The steps; an exception raised by ``function`` is caught and named
         in ``error``, so the steps are never lost. ``SystemExit`` counts as
-        an error only with a non-zero code.
+        an error only with a non-zero code; Ctrl-C is recorded as
+        ``"KeyboardInterrupt"``.
 
     Raises
     ------
@@ -393,6 +394,8 @@ def record_trace(
                 error_text = f"SystemExit: {raised.code}"
         except Exception as raised:  # noqa: BLE001 - any failure of the traced code is a result
             error_text = f"{type(raised).__name__}: {raised}"
+        except KeyboardInterrupt:  # Ctrl-C: keep the partial trace, it shows where it was
+            error_text = "KeyboardInterrupt"
     finally:
         monitoring.set_events(_TOOL_ID, 0)
         for event in callbacks:
