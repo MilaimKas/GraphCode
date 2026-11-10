@@ -34,6 +34,18 @@ def broken():
 def exit_with_error():
     Graph()
     raise SystemExit(3)
+
+
+def main():
+    import sys
+    for name in sys.argv[1:]:
+        Graph().add_node(name)
+"""
+
+SCENARIOS_CONFIG = """
+[tool.graphcode.scenarios]
+noise = "scripts.scenarios:noise_mean"
+cli = { target = "scripts.scenarios:main", argv = ["a", "b"] }
 """
 
 
@@ -43,6 +55,8 @@ def project(tmp_path: Path) -> Path:
     root = Path(shutil.copytree(FIXTURE_ROOT, tmp_path / "sample_project"))
     (root / "scripts").mkdir()
     (root / "scripts" / "scenarios.py").write_text(SCENARIOS_SOURCE, encoding="utf-8")
+    with (root / "pyproject.toml").open("a", encoding="utf-8") as pyproject:
+        pyproject.write(SCENARIOS_CONFIG)
     assert cli_main(["build-graph", "--project", str(root)]) == 0
     return root
 
@@ -108,3 +122,39 @@ def test_a_wrong_target_writes_nothing(project: Path, capfd: pytest.CaptureFixtu
     assert trace_in_child(project, TraceTarget("missing", "scripts.scenarios:missing")) == 1
     assert "has no 'missing'" in capfd.readouterr().err
     assert not (project / ".graphcode" / "traces" / "missing.json").exists()
+
+
+# --- the trace command ------------------------------------------------------------
+
+
+def test_cli_trace_with_entry_point_words(project: Path, capfd: pytest.CaptureFixture[str]) -> None:
+    """Words after ``--`` reach the traced function's ``sys.argv`` (one new graph per word).
+
+    The calls alternate (``__init__``, ``add_node``, ``__init__``...), so they do not merge:
+    only consecutive identical calls do.
+    """
+    arguments = ["trace", "--project", str(project), "--no-build", "scripts.scenarios:main", "--name", "two", "--"]
+    assert cli_main([*arguments, "x", "y"]) == 0
+    trace = read_trace(project / ".graphcode" / "traces" / "two.json")
+    assert [step.key.split(":")[1] for step in trace.steps] == ["Graph.__init__", "Graph.add_node"] * 2
+
+
+def test_cli_trace_all_scenarios(project: Path, capfd: pytest.CaptureFixture[str]) -> None:
+    """``--all`` writes one trace per scenario of pyproject.toml."""
+    assert cli_main(["trace", "--project", str(project), "--all"]) == 0
+    assert sorted(path.name for path in (project / ".graphcode" / "traces").iterdir()) == ["cli.json", "noise.json"]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        (["@unknown"], "no scenario 'unknown'"),
+        (["pkg.mod"], "names a module"),
+    ],
+)
+def test_cli_trace_errors(
+    project: Path, capfd: pytest.CaptureFixture[str], arguments: list[str], message: str
+) -> None:
+    """Wrong targets exit with 1 and a message, before any process is started."""
+    assert cli_main(["trace", "--project", str(project), "--no-build", *arguments]) == 1
+    assert message in capfd.readouterr().err
