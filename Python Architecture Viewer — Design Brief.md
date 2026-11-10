@@ -141,9 +141,9 @@ Our own extractor (~250 lines), built on Python's `ast`.
 
 A Python generator writes one self-contained static HTML page (no server) with Cytoscape.js.
 
-- **Front end:** plain JavaScript, vendored and version-pinned Cytoscape, `cytoscape-dagre` and `cytoscape-expand-collapse`, shipped inside the package. No npm, no build step.
+- **Front end:** plain JavaScript, vendored and version-pinned Cytoscape 3.30.4, dagre 0.8.5 and `cytoscape-expand-collapse` 4.1.1, shipped inside the package and inlined into the page. No npm, no build step.
 - **Source code:** each file embedded once; the code panel shows only the selected function's or class's span. Modules show file path and size, not code.
-- **Layout:** hierarchical (dagre). On open, modules are expanded and classes collapsed; edges of collapsed children are redrawn onto the box.
+- **Layout:** hierarchical (dagre, left to right), one nesting level at a time from the inside out, so boxes never overlap (`cytoscape-dagre` overlapped nested boxes). Edges are straight, so parallel edges merge into one line. On open, modules are expanded and classes (and functions holding nested defs) collapsed; edges of collapsed children are redrawn onto the box. Edges between a box and its own contents (a package `__init__` importing its submodules) are not drawn, only listed in the side panel.
 
 | Feature | What the user sees | Data it needs | Milestone |
 | --- | --- | --- | --- |
@@ -227,6 +227,8 @@ GraphCode/
 │   │   ├── imports.py       # import edges, module table
 │   │   ├── names.py         # symbol table: scopes, name lookup, bases, annotations
 │   │   ├── calls.py         # call resolution rules 1–5
+│   │   ├── inheritance.py   # inherits edges
+│   │   ├── build.py         # stage 1 end to end: config -> ArchitectureGraph
 │   │   ├── public_api.py    # milestone 3
 │   │   └── exceptions.py    # milestone 3
 │   ├── diff/                # PR diff
@@ -241,7 +243,7 @@ GraphCode/
 │   └── view/                # stage 3: interface
 │       ├── generate.py      # graph (+ traces, diff) + source -> one HTML
 │       ├── template.html
-│       └── assets/          # viewer.js, viewer.css, vendored Cytoscape + plugins
+│       └── assets/          # viewer.js, viewer.css, vendored Cytoscape, dagre, expand-collapse
 └── tests/
     ├── fixtures/sample_project/   # small known codebase
     ├── test_graph.py

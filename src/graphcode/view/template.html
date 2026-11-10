@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ · graphcode</title>
+<style>__STYLE__</style>
+</head>
+<body>
+<header id="toolbar">
+  <strong class="title">__TITLE__</strong>
+  <input id="search" type="search" list="node-keys" placeholder="Find a function, class or module…" autocomplete="off">
+  <datalist id="node-keys"></datalist>
+  <span class="group">
+    <label><input type="checkbox" data-edge-kind="calls" checked> calls</label>
+    <label><input type="checkbox" data-edge-kind="imports" checked> imports</label>
+    <label><input type="checkbox" data-edge-kind="inherits" checked> inherits</label>
+    <label><input type="checkbox" id="show-inferred" checked> inferred</label>
+    <label><input type="checkbox" id="show-private" checked> private</label>
+  </span>
+  <span class="group">
+    <button id="expand-all" type="button">Expand all</button>
+    <button id="collapse-classes" type="button">Collapse classes</button>
+    <button id="fit" type="button">Fit</button>
+  </span>
+</header>
+<main>
+  <div id="graph"></div>
+  <aside id="panel">
+    <section id="details"><p class="hint">Click a node to see its code and neighbours. Double-click a box to expand or collapse it.</p></section>
+    <section id="legend">
+      <h3>Legend</h3>
+      <ul class="legend-nodes">
+        <li><span class="swatch package"></span>package</li>
+        <li><span class="swatch module"></span>module</li>
+        <li><span class="swatch class"></span>class</li>
+        <li><span class="swatch method"></span>method</li>
+        <li><span class="swatch function"></span>function</li>
+      </ul>
+      <ul class="legend-edges">
+        <li><span class="line calls"></span>calls</li>
+        <li><span class="line calls inferred"></span>calls, inferred by type tracking</li>
+        <li><span class="line imports"></span>imports</li>
+        <li><span class="line inherits"></span>inherits</li>
+      </ul>
+      <p class="note">Call edges are static and partial: calls through untyped values are missing.</p>
+    </section>
+  </aside>
+</main>
+<script type="application/json" id="graph-data">__GRAPH_DATA__</script>
+__SCRIPTS__
+</body>
+</html>

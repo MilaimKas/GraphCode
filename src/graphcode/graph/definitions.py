@@ -23,15 +23,13 @@ from __future__ import annotations
 
 import ast
 import io
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 from graphcode.graph.model import LineSpan, Node, NodeKind
 from graphcode.keys import InvalidKeyError, NodeKey, module_name_from_path
-
-SourceReader = Callable[[str], str]
-"""Function returning the text of a file, given its project-relative path."""
+from graphcode.sources import SourceReader
 
 DefinitionStatement = ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
 
