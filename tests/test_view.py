@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from graphcode.cli import main
-from graphcode.view.generate import render_viewer
+from graphcode.view.generate import render_viewer, write_viewer
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "sample_project"
 
@@ -33,8 +33,8 @@ def test_render_embeds_graph_sources_and_scripts() -> None:
     graph = {"nodes": [{"key": "p", "file": "p/__init__.py"}], "edges": []}
     sources = {"p/__init__.py": "x = 1\n"}
     page = render_viewer(graph, sources, "p")
-    assert embedded_data(page) == {"graph": graph, "sources": sources}
-    assert page.count("<script>") == 4  # dagre, cytoscape, expand-collapse, viewer
+    assert embedded_data(page) == {"graph": graph, "sources": sources, "traces": []}
+    assert page.count("<script>") == 5  # dagre, cytoscape, expand-collapse, viewer, trace
     assert not re.search(r"__(TITLE|STYLE|SCRIPTS|GRAPH_DATA)__", page)
 
 
@@ -62,3 +62,21 @@ def test_cli_reports_configuration_errors(tmp_path: Path, capsys: pytest.Capture
     """A project without configuration exits with 1 and a message, not a traceback."""
     assert main(["build-graph", "--project", str(tmp_path)]) == 1
     assert "no pyproject.toml" in capsys.readouterr().err
+
+
+def test_traces_are_embedded_and_bad_files_skipped(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Valid trace files go into the page in name order; broken or outdated ones are skipped with a warning."""
+    graph = {"nodes": [{"key": "p", "file": "p/__init__.py", "parent": None}], "edges": []}
+    (tmp_path / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
+    traces = tmp_path / "traces"
+    traces.mkdir()
+    for name, version in (("b", 1), ("a", 1), ("old", 99)):
+        trace = {"header": {"schema_version": version, "scenario": name}, "steps": []}
+        (traces / f"{name}.json").write_text(json.dumps(trace), encoding="utf-8")
+    (traces / "broken.json").write_text("{not json", encoding="utf-8")
+
+    page = write_viewer(tmp_path / "graph.json", {"p/__init__.py": ""}.__getitem__, tmp_path / "v.html", traces)
+    embedded = embedded_data(page.read_text(encoding="utf-8"))["traces"]
+    assert [trace["header"]["scenario"] for trace in embedded] == ["a", "b"]
+    warnings = capsys.readouterr().err
+    assert "skipping broken.json" in warnings and "skipping old.json: schema version 99" in warnings

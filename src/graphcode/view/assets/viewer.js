@@ -3,6 +3,8 @@
  * Packages, modules and classes are nested boxes (compound nodes, from each
  * node's `parent`). On open, classes are collapsed; the expand-collapse
  * plugin then moves the edges of hidden children onto the collapsed box.
+ *
+ * What trace.js needs is shared on `window.graphcode` (see the end).
  */
 (function () {
   "use strict";
@@ -151,9 +153,9 @@
     cy.fit(undefined, 20);
   }
 
-  /** Collapse every box below module level (classes, functions holding nested defs). */
-  function collapseDefault() {
-    const boxes = cy.nodes().filter((node) => node.isParent() && !BOX_KINDS.has(node.data("kind")));
+  /** Collapse every box below module level (classes, functions holding nested defs) that `keepOpen` allows. */
+  function collapseDefault(keepOpen = () => false) {
+    const boxes = cy.nodes().filter((node) => node.isParent() && !BOX_KINDS.has(node.data("kind")) && !keepOpen(node));
     expandCollapse.collapse(boxes, { layoutBy: null });
     applyFilters();
     runLayout();
@@ -243,6 +245,7 @@
     if (!BOX_KINDS.has(node.kind)) panel.append(codeBlock(node));
     appendNeighbours(panel, "Uses", graph.edges.filter((edge) => edge.source === key), "target");
     appendNeighbours(panel, "Used by", graph.edges.filter((edge) => edge.target === key), "source");
+    for (const addDetails of detailsHooks) addDetails(key, panel);
   }
 
   /** The node's source lines, one block per span (getter and setter, @overload stubs). */
@@ -273,6 +276,8 @@
     }
     panel.append(list);
   }
+
+  const detailsHooks = [];  // functions (key, panel) adding lines to the details panel
 
   // --- events ---------------------------------------------------------------------
 
@@ -306,8 +311,11 @@
     applyFilters();
     runLayout();
   });
-  document.getElementById("collapse-classes").addEventListener("click", collapseDefault);
+  document.getElementById("collapse-classes").addEventListener("click", () => collapseDefault());
   document.getElementById("fit").addEventListener("click", () => cy.fit(undefined, 20));
 
   collapseDefault();
+
+  // Shared with trace.js, which is loaded after this file.
+  window.graphcode = { data, cy, expandCollapse, nodeByKey, detailsHooks, element, collapseDefault, focus };
 })();

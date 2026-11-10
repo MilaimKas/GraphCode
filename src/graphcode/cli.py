@@ -25,7 +25,7 @@ from graphcode.graph.build import build_graph
 from graphcode.graph.definitions import ExtractionError
 from graphcode.graph.serialization import write_graph
 from graphcode.sources import SourceError, working_tree_reader
-from graphcode.trace.runner import trace_in_child
+from graphcode.trace.runner import TRACES_FOLDER, trace_in_child
 from graphcode.trace.targets import (
     SCENARIO_PREFIX,
     TargetError,
@@ -114,7 +114,12 @@ def _view(config: GraphCodeConfig, rebuild: bool, open_browser: bool) -> None:
     graph_path = config.output_folder / GRAPH_FILE
     if rebuild or not graph_path.exists():
         _build(config)
-    page = write_viewer(graph_path, working_tree_reader(config.project_root), config.output_folder / VIEWER_FILE)
+    page = write_viewer(
+        graph_path,
+        working_tree_reader(config.project_root),
+        config.output_folder / VIEWER_FILE,
+        config.output_folder / TRACES_FOLDER,
+    )
     print(f"viewer -> {page}")
     if open_browser:
         _open_in_browser(page)

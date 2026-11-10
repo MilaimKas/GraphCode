@@ -23,10 +23,15 @@
     <button id="collapse-classes" type="button">Collapse classes</button>
     <button id="fit" type="button">Fit</button>
   </span>
+  <span class="group" id="trace-group">
+    <label>Trace <select id="trace-select"><option value="">none</option></select></label>
+  </span>
 </header>
+<div id="trace-banner" hidden></div>
 <main>
   <div id="graph"></div>
   <aside id="panel">
+    <section id="trace-panel" hidden></section>
     <section id="details"><p class="hint">Click a node to see its code and neighbours. Double-click a box to expand or collapse it.</p></section>
     <section id="legend">
       <h3>Legend</h3>
@@ -42,6 +47,8 @@
         <li><span class="line calls inferred"></span>calls, inferred by type tracking</li>
         <li><span class="line imports"></span>imports</li>
         <li><span class="line inherits"></span>inherits</li>
+        <li class="trace-only"><span class="line ran"></span>call that ran in the trace</li>
+        <li class="trace-only"><span class="line runtime"></span>call that ran, missing from the static graph</li>
       </ul>
       <p class="note">Call edges are static and partial: calls through untyped values are missing.</p>
     </section>

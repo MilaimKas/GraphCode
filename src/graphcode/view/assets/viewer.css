@@ -13,9 +13,12 @@
   --calls: #52606d;
   --imports: #1e88e5;
   --inherits: #8e24aa;
+  --trace: #e65100;
+  --error: #c62828;
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }  /* even where a rule sets display */
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; flex-direction: column;
@@ -67,3 +70,19 @@ ul.neighbours a { color: inherit; cursor: pointer; text-decoration: underline do
 .line.inferred { border-top-style: dashed; }
 .line.imports { border-color: var(--imports); border-top-width: 1px; }
 .line.inherits { border-color: var(--inherits); border-top-width: 3px; }
+
+/* trace overlay (trace.js) */
+#trace-banner { padding: 6px 12px; background: #fff8e1; border-bottom: 1px solid #ffe082; }
+#trace-panel { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+#trace-panel h3 { margin-top: 0; }
+ol.call-tree { list-style: none; margin: 6px 0; padding: 0; max-height: 45vh; overflow: auto; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+ol.call-tree li { white-space: nowrap; }
+ol.call-tree a { color: inherit; cursor: pointer; }
+ol.call-tree a:hover { text-decoration: underline; }
+ol.call-tree a.unmatched { color: var(--muted); cursor: default; }
+.count { color: var(--trace); }
+.trace-error { color: var(--error); }
+.trace-calls { color: var(--trace); font-weight: 600; }
+.line.ran { border-color: var(--calls); border-top-width: 4px; }
+.line.runtime { border-color: var(--trace); border-top-style: dotted; border-top-width: 3px; }
+body:not(.tracing) .trace-only { display: none; }
