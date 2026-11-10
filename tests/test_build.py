@@ -37,6 +37,15 @@ def test_load_config_of_the_fixture() -> None:
     assert config.output_folder == FIXTURE_ROOT / ".graphcode"
 
 
+def test_scenarios_table_is_passed_on(tmp_path: Path) -> None:
+    """``[tool.graphcode.scenarios]`` arrives unchanged, for trace.targets to read."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.graphcode]\npackage = "a"\n[tool.graphcode.scenarios]\nsmall = "s:f"\nbig = { target = "s:g", args = [1] }\n',
+        encoding="utf-8",
+    )
+    assert load_config(tmp_path).scenarios == {"small": "s:f", "big": {"target": "s:g", "args": [1]}}
+
+
 @pytest.mark.parametrize(
     ("pyproject", "message"),
     [
@@ -45,6 +54,7 @@ def test_load_config_of_the_fixture() -> None:
         ("[tool.graphcode]\npackage = 'a.b'\n", "top-level import name"),
         ("[tool.graphcode]\npackage = 'a'\nexclude = 'a/x'\n", "list of paths"),
         ("[tool.graphcode\n", "cannot read"),
+        ("[tool.graphcode]\npackage = 'a'\nscenarios = 'x'\n", "table of name"),
     ],
 )
 def test_invalid_config(tmp_path: Path, pyproject: str | None, message: str) -> None:

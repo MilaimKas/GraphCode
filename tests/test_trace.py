@@ -119,6 +119,9 @@ def recurse(depth):
 def exit_now():
     raise SystemExit(3)
 
+def exit_ok():
+    raise SystemExit(0)
+
 async def coroutine():
     return 1
 
@@ -213,6 +216,7 @@ def test_exception_ending_the_target_is_reported(cases: tuple[ModuleType, dict[s
     assert trace_case(cases, "fail").error == "ValueError: boom"
     trace = trace_case(cases, "exit_now")
     assert (trace.error, rows(trace)) == ("SystemExit: 3", [(None, "exit_now", "raise", 1)])
+    assert trace_case(cases, "exit_ok").error is None  # sys.exit(0): a "main" that succeeded
 
 
 def test_generator_resumes_continue_one_step(cases: tuple[ModuleType, dict[str, str]]) -> None:

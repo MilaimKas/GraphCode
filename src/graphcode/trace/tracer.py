@@ -355,7 +355,8 @@ def record_trace(
     -------
     RecordedTrace
         The steps; an exception raised by ``function`` is caught and named
-        in ``error`` (``SystemExit`` too), so the steps are never lost.
+        in ``error``, so the steps are never lost. ``SystemExit`` counts as
+        an error only with a non-zero code.
 
     Raises
     ------
@@ -387,7 +388,10 @@ def record_trace(
         monitoring.set_events(_TOOL_ID, sum(callbacks))  # event constants are distinct bit flags
         try:
             function(*args, **(kwargs or {}))
-        except (Exception, SystemExit) as raised:  # noqa: BLE001 - any failure of the traced code is a result
+        except SystemExit as raised:
+            if raised.code not in (None, 0):  # sys.exit() or sys.exit(0) is a normal end of a "main"
+                error_text = f"SystemExit: {raised.code}"
+        except Exception as raised:  # noqa: BLE001 - any failure of the traced code is a result
             error_text = f"{type(raised).__name__}: {raised}"
     finally:
         monitoring.set_events(_TOOL_ID, 0)

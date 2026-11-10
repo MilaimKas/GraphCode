@@ -1,17 +1,23 @@
 """Read the ``[tool.graphcode]`` section of a project's ``pyproject.toml``.
 
-Milestone 1 reads only ``package`` (required) and ``exclude`` (optional)::
+Reads ``package`` (required), ``exclude`` and ``scenarios`` (optional)::
 
     [tool.graphcode]
     package = "datagenerator"
     exclude = ["datagenerator/legacy"]
+
+    [tool.graphcode.scenarios]
+    sample-small = "scripts.scenarios:sample_small"
+
+Scenarios are passed on as written; ``trace.targets`` interprets them.
 """
 
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -37,11 +43,14 @@ class GraphCodeConfig:
         Import name of the package to graph (top level, no dots).
     exclude : tuple of str
         Paths relative to the project root whose files are not analysed.
+    scenarios : dict of str to Any
+        The ``[tool.graphcode.scenarios]`` table, name -> target, as written.
     """
 
     project_root: Path
     package: str
     exclude: tuple[str, ...] = ()
+    scenarios: dict[str, Any] = field(default_factory=dict)
 
     @property
     def output_folder(self) -> Path:
@@ -72,4 +81,7 @@ def load_config(project_root: Path) -> GraphCodeConfig:
     exclude = settings.get("exclude", [])
     if not isinstance(exclude, list) or not all(isinstance(path, str) for path in exclude):
         raise ConfigError("[tool.graphcode] exclude must be a list of paths")
-    return GraphCodeConfig(project_root, package, tuple(path.strip("/") for path in exclude))
+    scenarios = settings.get("scenarios", {})
+    if not isinstance(scenarios, dict):
+        raise ConfigError("[tool.graphcode.scenarios] must be a table of name = target")
+    return GraphCodeConfig(project_root, package, tuple(path.strip("/") for path in exclude), scenarios)
