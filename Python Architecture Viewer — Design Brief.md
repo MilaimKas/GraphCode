@@ -44,7 +44,7 @@ The only contract between stages is a node key `module.path:Qualname`, e.g. `dat
 - Frames that match no node (decorator wrappers, etc.) are kept in traces as `matched: false` and listed, never dropped silently.
 - **Duplicates are merged:** a key can repeat (property getter and setter, `@overload` stubs, conditional definitions). The extractor emits one node with several line spans, not one node per definition.
 - **Only `def` and `class` become nodes.** Lambdas and comprehensions do not; their calls are credited to the enclosing function. This also keeps the graph independent of Python's comprehension inlining (3.12+).
-- **Tracer edge cases (milestone 4):** 3.12 generic scopes (`<generic parameters of f>`), module bodies (`<module>`) and class bodies need explicit mapping rules; frames that cannot form a valid key are recorded as unmatched, never crash the tracer.
+- **Tracer edge cases (milestone 2):** 3.12 generic scopes (`<generic parameters of f>`), module bodies (`<module>`) and class bodies need explicit mapping rules; frames that cannot form a valid key are recorded as unmatched, never crash the tracer.
 
 ## Stage 1: structure graph
 
@@ -111,7 +111,7 @@ Our own extractor (~250 lines), built on Python's `ast`.
 - **Child process:** the target runs in `python -m graphcode.trace.runner` with the project's interpreter (`sys.executable`), never inside the CLI process. Each scenario gets a fresh interpreter (reproducible `--all` runs), `sys.exit` or crashes cannot lose the trace, and the trace is written in a `finally`.
 - **Generators:** a resume is a continuation of the original call, not a new step. Async code is detected and reported as unsupported.
 - **Noise control:** consecutive sibling calls with identical subtrees collapse into one step with `count = N`. Hard cap of 50,000 steps sets `truncated: true`. Both configurable.
-- **Output:** `.graphcode/traces/<scenario>.json` (milestone 4), `.graphcode/traces/<scenario>/<commit>.json` (milestone 5).
+- **Output:** `.graphcode/traces/<scenario>.json` (milestone 2), `.graphcode/traces/<scenario>/<commit>.json` (milestone 5).
 
 ### Trace schema (version 1)
 
@@ -153,12 +153,12 @@ A Python generator writes one self-contained static HTML page (no server) with C
 | Code on click | Side panel shows the function's or class's source, file and line | Code span, embedded source | 1 |
 | Collapsible boxes | Package › module › class nesting; collapse or expand each | `parent` | 1 |
 | Search and filter | Find a node by name; hide private functions or edge kinds | Node keys, kinds | 1 |
-| Diff mode | Added / removed (ghost) / modified / unchanged colors, change badges on collapsed boxes, function diff in code panel | Two graphs | 2 |
-| Public API layer | Public entry points marked; a toggle shows only what is reachable from them | `public` flag | 3 |
-| Exception view | Pick an exception type and see where it is raised and caught | `raises`, `catches` | 3 |
-| Trace overlay | Pick a scenario; nodes and edges on its path light up; runtime-only edges in a third style | Trace file | 4 |
-| Call-tree panel | The trace as an indented list; clicking a step selects its node and shows its code | Trace file | 4 |
-| Staleness warning | Banner when trace and graph commits differ, or either is dirty | `commit`, `dirty` | 4 |
+| Diff mode | Added / removed (ghost) / modified / unchanged colors, change badges on collapsed boxes, function diff in code panel | Two graphs | 3 |
+| Public API layer | Public entry points marked; a toggle shows only what is reachable from them | `public` flag | 4 |
+| Exception view | Pick an exception type and see where it is raised and caught | `raises`, `catches` | 4 |
+| Trace overlay | Pick a scenario; nodes and edges on its path light up; runtime-only edges in a third style | Trace file | 2 |
+| Call-tree panel | The trace as an indented list; clicking a step selects its node and shows its code | Trace file | 2 |
+| Staleness warning | Banner when trace and graph commits differ, or either is dirty | `commit`, `dirty` | 2 |
 | Trace diff | Calls added and removed on a scenario between two commits | Two trace files | 5 |
 
 ## PR diff
@@ -176,10 +176,10 @@ uv run graphcode diff main..feature-x  # any two refs
 - **Classes:** a class is modified only if its own body changes (bases, decorators, class attributes), not when one of its methods changes. Collapsed boxes with changed children show a badge with counts.
 - **Moves and renames:** a removed and an added node with the same structural hash are shown as one move.
 - **Edges:** added and removed edges; new cross-module dependencies and new import cycles called out separately. Cycles use networkx strongly connected components over module-level imports only (imports inside functions and under `if TYPE_CHECKING:` are ignored).
-- **Public API changes** (from milestone 3): public functions added, removed, or with a changed signature (hash of the arguments node).
+- **Public API changes** (from milestone 4): public functions added, removed, or with a changed signature (hash of the arguments node).
 - **Output:** a separate `.graphcode/diff-<base>-<head>.html` (same viewer in diff mode, union of both graphs, removed nodes as ghosts, `difflib` diff in the code panel), and `--format md` to stdout: counts, new dependencies, cycles, API changes. Local only; CI integration is out of scope.
 
-## Static enrichment (milestone 3)
+## Static enrichment (milestone 4)
 
 - **Public API**, own rules (no griffe): `__all__` if present, else names without a leading underscore; names re-exported by a package `__init__` are public at package level; everything inside a private module (`_internal.py`) is private. A dynamically built `__all__` is reported as `unknown`.
 - **Exceptions:** direct `raise X` and `except X` per function only, plus bare `raise` (re-raise) noted. Names resolved to package classes where possible; built-ins kept as names. No propagation along call edges: static propagation over a partial call graph would be confidently incomplete; traces record actual raises.
@@ -197,7 +197,7 @@ uv run graphcode diff main..feature-x  # any two refs
   package = "datagenerator"          # import name, required
   exclude = ["datagenerator/legacy"] # optional
 
-  [tool.graphcode.scenarios]         # used from milestone 4
+  [tool.graphcode.scenarios]         # used from milestone 2
   sample-small = "scripts.scenarios:sample_small"
   load = { target = "datagenerator.dag:load", args = ["x.json"] }
   ```
@@ -229,8 +229,8 @@ GraphCode/
 │   │   ├── calls.py         # call resolution rules 1–5
 │   │   ├── inheritance.py   # inherits edges
 │   │   ├── build.py         # stage 1 end to end: config -> ArchitectureGraph
-│   │   ├── public_api.py    # milestone 3
-│   │   └── exceptions.py    # milestone 3
+│   │   ├── public_api.py    # milestone 4
+│   │   └── exceptions.py    # milestone 4
 │   ├── diff/                # PR diff
 │   │   ├── hashing.py       # structural hash
 │   │   ├── compare.py       # nodes, edges, moves, cycles
@@ -262,12 +262,12 @@ Five milestones, each usable on its own before the next starts.
 
 1. **Graph viewer.** Config, join key, extractor (definitions, imports, inheritance, calls with type tracking), `graph.json`, viewer page.
    - Done when, on DataGenerator: every package definition appears with the right kind and span (golden test on fixture, spot check on DataGenerator); the cross-module seam into `DAG` (the 28 type-inferred edges) is visible; the page opens offline and stays responsive; highlight, code panel, collapse and search work; the same works on AED_rate with only `package` configured.
-2. **Structural PR diff.** Git source reader, structural hash, comparison, cycles, cache, diff mode, Markdown summary.
-   - Done when: running it on a real PR shows its added, removed and modified nodes and any new dependencies at a glance.
-3. **Static enrichment.** Public API flag and exception attributes, their views, API changes in the PR diff.
-   - Done when: public entry points and every raised exception type show up correctly on a known project.
-4. **Traces.** Targets, child-process runner, tracer, trace files, overlay with runtime-only edges, call-tree panel, staleness warning.
+2. **Traces.** Targets, child-process runner, tracer, trace files, overlay with runtime-only edges, call-tree panel, staleness warning.
    - Done when: one or two important scenarios can be recorded with one command and followed step by step in the viewer.
+3. **Structural PR diff.** Git source reader, structural hash, comparison, cycles, cache, diff mode, Markdown summary.
+   - Done when: running it on a real PR shows its added, removed and modified nodes and any new dependencies at a glance.
+4. **Static enrichment.** Public API flag and exception attributes, their views, API changes in the PR diff.
+   - Done when: public entry points and every raised exception type show up correctly on a known project.
 5. **History.** Traces per commit; diff a scenario between two commits as the set of caller → callee edges with counts (no tree alignment). Old refs are re-run in a temporary git worktree with `uv run`.
    - Done when: reviewing a Claude change shows which calls it added or removed on a key path.
 
@@ -281,5 +281,5 @@ Five milestones, each usable on its own before the next starts.
 
 ## Open questions
 
-- [ ] Which one or two DataGenerator scenarios matter most to trace first? (needed at milestone 4)
-- [ ] After milestone 4: does the runtime-only edge count justify more type tracking in the extractor?
+- [ ] Which one or two DataGenerator scenarios matter most to trace first? (needed at milestone 2)
+- [ ] After milestone 2: does the runtime-only edge count justify more type tracking in the extractor?
