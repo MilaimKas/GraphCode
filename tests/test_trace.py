@@ -1,9 +1,12 @@
-"""Tests for the tracer: real runs on the fixture and on small synthetic cases."""
+"""Tests for the tracer (real runs on the fixture and synthetic cases) and trace files."""
 
 from __future__ import annotations
 
 import importlib
+import json
+import platform
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -11,7 +14,16 @@ import pytest
 
 from graphcode.keys import module_name_from_path
 from graphcode.sources import find_package_files
-from graphcode.trace.tracer import RecordedTrace, TraceError, record_trace
+from graphcode.trace.format import (
+    TraceFile,
+    TraceFormatError,
+    read_trace,
+    trace_file_for,
+    trace_from_dict,
+    trace_to_dict,
+    write_trace,
+)
+from graphcode.trace.tracer import RecordedTrace, TraceError, TraceStep, record_trace
 
 pytestmark = pytest.mark.skipif(sys.version_info < (3, 12), reason="sys.monitoring needs Python 3.12")
 
@@ -293,3 +305,68 @@ def test_async_code_is_refused(cases: tuple[ModuleType, dict[str, str]]) -> None
 def test_traces_are_repeatable(cases: tuple[ModuleType, dict[str, str]]) -> None:
     """A second trace gives the same steps: nothing is left switched off."""
     assert trace_case(cases, "consume") == trace_case(cases, "consume")
+
+
+# --- trace files ----------------------------------------------------------------
+
+
+def sample_trace_file() -> TraceFile:
+    """A small hand-made trace: ``f`` calling ``g`` three times, ``g`` failing."""
+    steps = (
+        TraceStep(0, None, 0, "pkg.mod:f", "return", None, 1, True),
+        TraceStep(1, 0, 1, "pkg.mod:g", "raise", "ValueError", 3, False),
+    )
+    return trace_file_for(RecordedTrace(steps, False, None), "demo", "pkg.mod:f", "abc123", False)
+
+
+def test_trace_file_round_trip(tmp_path: Path) -> None:
+    """Write then read gives the same trace; the header describes the recording."""
+    trace = sample_trace_file()
+    path = tmp_path / "traces" / "demo.json"
+    write_trace(trace, path)
+    assert read_trace(path) == trace
+    header = trace.header
+    assert (header.scenario, header.step_count, header.truncated, header.error) == ("demo", 2, False, None)
+    assert header.python_version == platform.python_version()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["steps"][1]["args"] is None and data["steps"][1]["return_value"] is None
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 7  # one line per step
+
+
+def test_empty_trace_round_trip(tmp_path: Path) -> None:
+    """A scenario that calls no package function gives a valid, empty trace."""
+    trace = trace_file_for(RecordedTrace((), False, "SystemExit: 0"), "empty", "x:y", None, True)
+    write_trace(trace, tmp_path / "empty.json")
+    assert read_trace(tmp_path / "empty.json") == trace
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda data: data["header"].update(schema_version=99), "schema version 99"),
+        (lambda data: data["header"].pop("commit"), "invalid trace content"),
+        (lambda data: data["steps"][1].update(outcome="crash"), "unknown outcome"),
+        (lambda data: data["steps"][1].update(parent=5), "not an earlier step"),
+        (lambda data: data["steps"][1].update(depth=4), "expected 1"),
+        (lambda data: data["steps"][1].update(id=7), "has id 7"),
+        (lambda data: data["steps"][1].update(parent="0"), "invalid trace content"),
+        (lambda data: data["header"].update(step_count=9), "says 9 steps"),
+        (lambda data: data.update(steps={}), "must be a list"),
+        (lambda data: data["steps"].__setitem__(1, [1, 0]), "invalid trace content"),
+        (lambda data: data.update(header="x"), "invalid trace content"),
+    ],
+)
+def test_invalid_trace_content(change: Callable[[dict], object], message: str) -> None:
+    """Each kind of damage gives one clear TraceFormatError."""
+    data = trace_to_dict(sample_trace_file())
+    change(data)
+    with pytest.raises(TraceFormatError, match=message):
+        trace_from_dict(data)
+
+
+def test_unreadable_trace_file(tmp_path: Path) -> None:
+    """A file that is not JSON fails with TraceFormatError, not a JSON error."""
+    path = tmp_path / "broken.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(TraceFormatError, match="not valid UTF-8 JSON"):
+        read_trace(path)

@@ -39,7 +39,7 @@ The only contract between stages is a node key `module.path:Qualname`, e.g. `dat
 
 - Same convention as Python entry points and as the CLI trace target, so there is one syntax to learn.
 - Independent of `src` or flat layout.
-- The tracer builds it from `frame.f_globals["__name__"]` and `co_qualname`. Code run as `__main__` is mapped back through stage 1's file → module table.
+- The tracer builds it from the code's file (through the file → module table, so code run as `__main__` maps back too) and `co_qualname`. Lambdas, generator expressions and class bodies are not steps: what they call belongs to the enclosing function, as in the static graph.
 - Nested functions and lambdas use Python's qualified name (`outer.<locals>.inner`).
 - Frames that match no node (decorator wrappers, etc.) are kept in traces as `matched: false` and listed, never dropped silently.
 - **Duplicates are merged:** a key can repeat (property getter and setter, `@overload` stubs, conditional definitions). The extractor emits one node with several line spans, not one node per definition.
@@ -120,7 +120,8 @@ Our own extractor (~250 lines), built on Python's `ast`.
   "header": {
     "schema_version": 1, "scenario": "sample-small", "target": "scripts.scenarios:sample_small",
     "date": "2026-11-08T21:14:03", "commit": "a1b2c3d", "dirty": false,
-    "python_version": "3.12.7", "graphcode_version": "0.1.0", "step_count": 9, "truncated": false
+    "python_version": "3.12.7", "graphcode_version": "0.1.0", "step_count": 9, "truncated": false,
+    "error": "ValueError: no node 'z'"
   },
   "steps": [
     {"id": 4, "parent": null, "depth": 0, "key": "datagenerator.generator:DataGenerator.sample",
@@ -135,6 +136,8 @@ Our own extractor (~250 lines), built on Python's `ast`.
 
 - Steps are a **flat list in execution order**; `id` + `parent` form the call tree (`parent: null` = called by the entry point). `depth` is redundant but saves recomputing indentation. A flat list can be streamed, truncated and compared easily.
 - `outcome: "raise"` means the function was *exited* by an exception; an exception caught inside counts as `return`.
+- `error` names the exception that ended the traced function (`null` if none): a crashed scenario must not look like a normal one.
+- `outcome: "unfinished"`: the step cap stopped the recording first, or a generator was abandoned (Python 3.12 closes a generator left by `break` without reporting it).
 - `args` and `return_value` are reserved (always `null`) for variable tracking.
 
 ## Stage 3: interface
