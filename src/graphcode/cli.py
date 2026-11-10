@@ -7,6 +7,8 @@ write into ``<project>/.graphcode/``.
 from __future__ import annotations
 
 import argparse
+import platform
+import subprocess
 import sys
 import webbrowser
 from collections import Counter
@@ -85,4 +87,18 @@ def _view(config: GraphCodeConfig, rebuild: bool, open_browser: bool) -> None:
     page = write_viewer(graph_path, working_tree_reader(config.project_root), config.output_folder / VIEWER_FILE)
     print(f"viewer -> {page}")
     if open_browser:
+        _open_in_browser(page)
+
+
+def _open_in_browser(page: Path) -> None:
+    """Open the page in the default browser; under WSL, in the Windows one.
+
+    Python's ``webbrowser`` finds no browser inside WSL, so the page is
+    handed to ``explorer.exe`` with its Windows path.
+    """
+    if "microsoft" in platform.release().lower():
+        windows_path = subprocess.run(["wslpath", "-w", str(page)], capture_output=True, text=True, check=True).stdout.strip()
+        # explorer.exe returns exit code 1 even on success: do not check it.
+        subprocess.run(["explorer.exe", windows_path], check=False)
+    else:
         webbrowser.open(page.as_uri())
