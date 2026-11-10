@@ -189,7 +189,7 @@ uv run graphcode diff main..feature-x  # any two refs
 - **Repository:** public on my GitHub, MIT licence.
 - **Installation:** dev dependency in each project from a git tag: `uv add --dev git+https://github.com/<me>/GraphCode@v0.1`. Run with `uv run graphcode ...`. The tracer must run in the project's environment, which is why it is not a global `uv tool`.
 - **Python:** `requires-python >=3.10`, so target projects declaring `>=3.10` resolve without edits. Only the tracer needs 3.12.
-- **Dependencies:** networkx. Nothing else at run time beyond the standard library.
+- **Dependencies:** networkx, and `tomli` on Python 3.10 only (to read `pyproject.toml`; 3.11+ has `tomllib`). Nothing else at run time beyond the standard library.
 - **Config** in the target project's `pyproject.toml`:
 
   ```toml

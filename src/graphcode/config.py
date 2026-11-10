@@ -9,13 +9,14 @@ Milestone 1 reads only ``package`` (required) and ``exclude`` (optional)::
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:  # Python 3.10 has no tomllib; only reading the config needs it
-    tomllib = None  # type: ignore[assignment]
+else:  # Python 3.10: tomli is the same parser, installed only there
+    import tomli as tomllib
 
 OUTPUT_FOLDER = ".graphcode"
 
@@ -56,8 +57,6 @@ def load_config(project_root: Path) -> GraphCodeConfig:
     ConfigError
         If the file or the section is missing, or ``package`` is invalid.
     """
-    if tomllib is None:
-        raise ConfigError("reading pyproject.toml needs Python 3.11 or later")
     pyproject = project_root / "pyproject.toml"
     if not pyproject.is_file():
         raise ConfigError(f"no pyproject.toml in {project_root}")
