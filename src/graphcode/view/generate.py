@@ -24,8 +24,8 @@ from typing import Any
 from graphcode.sources import SourceReader
 
 # Load order matters: cytoscape before its plugin; dagre is used directly.
-# trace.js and network.js after viewer.js: they use what viewer.js exposes on window.graphcode.
-_SCRIPT_FILES = ("dagre.min.js", "cytoscape.min.js", "cytoscape-expand-collapse.js", "viewer.js", "trace.js", "network.js")
+# trace.js and the network files after viewer.js: they use what viewer.js exposes on window.graphcode.
+_SCRIPT_FILES = ("dagre.min.js", "cytoscape.min.js", "cytoscape-expand-collapse.js", "viewer.js", "trace.js", "network-elements.js", "network.js")
 TRACE_SCHEMA_VERSION = 1  # the version of graphcode.trace.format this viewer can show
 _PLACEHOLDER = re.compile(r"__(TITLE|STYLE|SCRIPTS|GRAPH_DATA)__")
 

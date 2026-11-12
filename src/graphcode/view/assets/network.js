@@ -1,11 +1,12 @@
 /* graphcode viewer, "Network" mode: the same graph as a force-directed network on a dark background.
  *
  * Every definition is a shaded ball: size grows with its number of connections,
- * colour is its subpackage. Positions come from Cytoscape's built-in "cose"
- * force simulation (nodes repel, edges are springs, gravity pulls to the centre).
- * Containment (module holds class holds method) is a short, faint spring.
- * Hover or click lights a ball and its neighbours; a chosen trace makes what
- * ran glow and dims the rest.
+ * colour is its top-level module or subpackage. Classes start folded (their
+ * methods inside them); double-click a class to unfold or fold it. What to draw
+ * comes from network-elements.js; this file draws it and handles interaction.
+ * Positions come from Cytoscape's built-in "cose" force simulation (nodes repel,
+ * edges are springs, gravity pulls to the centre). Hover or click lights a ball
+ * and its neighbours; a chosen trace makes what ran glow and dims the rest.
  *
  * Own Cytoscape instance in its own container, built on first use (the force
  * layout needs a visible container). Uses what viewer.js shares on window.graphcode.
@@ -14,92 +15,14 @@
   "use strict";
 
   const shared = window.graphcode;
-  const { data, nodeByKey, element, showDetails, shortName, isPrivate } = shared;
-  const graph = data.graph;
+  const { data, element, showDetails } = shared;
+  const { groupNames, groupColor, buildElements, visibleKey, foldedAncestors, isFolded } = shared.networkElements;
   const RUNNING_COLOR = "#ffb300";
-  const BIG_NODE_DEGREE = 6;  // balls with at least this many connections are always labelled
 
   let networkCy = null;  // created on first switch to Network mode
   let hoveredKey = null;
   let chosenKey = null;
-
-  // --- groups, colours, sizes ------------------------------------------------------
-
-  /**
-   * Group of a key: the first level below the root package, module or subpackage alike
-   * ("pkg.sub.mod:f" -> "sub", "pkg.dag:DAG" -> "dag"); the root itself keeps its name.
-   * Grouping by subpackages only would give a flat package (no subpackages) a single colour.
-   */
-  function groupOf(key) {
-    const parts = key.split(":")[0].split(".");
-    return parts.length >= 2 ? parts[1] : parts[0];
-  }
-
-  const groupNames = [...new Set(graph.nodes.map((node) => groupOf(node.key)))].sort();
-  /** Evenly spread hues, bright enough for a dark background; starting at 200 (blue) puts the first groups in cool colours. */
-  const groupColor = new Map(groupNames.map((name, index) => [name, `hsl(${Math.round((index * 360) / groupNames.length + 200) % 360}, 75%, 60%)`]));
-
-  /** The ball as an SVG picture: a radial gradient with its bright spot up and left gives the 3D look. */
-  function ballImage(color) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><defs>`
-      + `<radialGradient id="g" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#fff" stop-opacity="0.95"/>`
-      + `<stop offset="0.25" stop-color="${color}"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></radialGradient></defs>`
-      + `<circle cx="50" cy="50" r="49" fill="${color}"/><circle cx="50" cy="50" r="49" fill="url(#g)"/></svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
-
-  const groupBall = new Map(groupNames.map((name) => [name, ballImage(groupColor.get(name))]));  // one picture per group
-
-  /** Private: the node itself, or a class or function holding it, has a private name. */
-  function isHiddenAsPrivate(key) {
-    for (let current = key; current; current = nodeByKey.get(current)?.parent) {
-      if (isPrivate(current)) return true;
-    }
-    return false;
-  }
-
-  /** Connections per key: graph edges in both directions plus containment (parent to child). */
-  function connectionCounts() {
-    const counts = new Map(graph.nodes.map((node) => [node.key, 0]));
-    const bump = (key) => counts.set(key, counts.get(key) + 1);
-    for (const edge of graph.edges) { bump(edge.source); bump(edge.target); }
-    for (const node of graph.nodes) {
-      if (node.parent) { bump(node.key); bump(node.parent); }
-    }
-    return counts;
-  }
-
-  // --- building the network ---------------------------------------------------------
-
-  /** Cytoscape elements: one ball per node, a faint containment edge to its parent, and the graph's edges. */
-  function buildElements() {
-    const counts = connectionCounts();
-    const elements = [];
-    for (const node of graph.nodes) {
-      const connections = counts.get(node.key);
-      elements.push({
-        group: "nodes",
-        data: {
-          id: node.key, label: shortName(node.key), kind: node.kind, private: isHiddenAsPrivate(node.key), connections,
-          size: Math.min(70, 12 + 7 * Math.sqrt(connections)), big: connections >= BIG_NODE_DEGREE,
-          image: groupBall.get(groupOf(node.key)), color: groupColor.get(groupOf(node.key)),
-        },
-      });
-      if (node.parent) {
-        elements.push({
-          group: "edges",
-          data: { id: `contains|${node.parent}|${node.key}`, source: node.parent, target: node.key, kind: "contains", color: groupColor.get(groupOf(node.key)) },
-        });
-      }
-    }
-    for (const edge of graph.edges) {
-      elements.push({
-        group: "edges",
-        data: { id: `${edge.kind}|${edge.source}|${edge.target}`, source: edge.source, target: edge.target, kind: edge.kind, confidence: edge.confidence },
-      });
-    }
-    return elements;
-  }
+  const unfolded = new Set();  // classes and functions whose members are shown (double-click toggles)
 
   /** Look of Network mode: shaded balls with a soft halo, thin translucent edges, then trace and highlight states. */
   const networkStyle = [
@@ -109,11 +32,14 @@
         width: "data(size)", height: "data(size)", "background-image": "data(image)", "background-fit": "cover",
         "background-opacity": 0, "border-width": 0, "underlay-color": "data(color)", "underlay-padding": 3,
         "underlay-opacity": 0.12, "underlay-shape": "ellipse",
-        label: "data(label)", color: "#e6ebf5", "font-size": 13, "text-valign": "bottom", "text-margin-y": 3,
-        "text-outline-color": "#07090f", "text-outline-width": 3, "min-zoomed-font-size": 8,  // small balls: label appears when zoomed in
+        // Small, dim labels; a label appears only once it would be at least 9 px on screen (zoom in to read more).
+        label: "data(label)", color: "#9aa5b8", "font-size": 9, "text-valign": "bottom", "text-margin-y": 2,
+        "text-outline-color": "#07090f", "text-outline-width": 2, "text-opacity": 0.8, "min-zoomed-font-size": 9,
       },
     },
-    { selector: "node[?big]", style: { "min-zoomed-font-size": 0, "font-size": 14, "font-weight": "bold" } },
+    { selector: "node[?big]", style: { "min-zoomed-font-size": 0, "font-size": 10, color: "#c7cfdc" } },
+    // a folded class: a faint dashed ring says "double-click to see my methods"
+    { selector: "node[?folded]", style: { "border-width": 1.2, "border-style": "dashed", "border-color": "#c7cfdc", "border-opacity": 0.45 } },
     {
       selector: "edge",
       style: {
@@ -133,19 +59,31 @@
     { selector: "edge[confidence = 'runtime']", style: { "line-style": "dotted" } },
     // hover and click
     { selector: ".dim", style: { opacity: 0.07 } },
-    { selector: "node.lit", style: { opacity: 1, "underlay-opacity": 0.55, "underlay-padding": 8, "min-zoomed-font-size": 0 } },
+    { selector: "node.lit", style: { opacity: 1, "underlay-opacity": 0.55, "underlay-padding": 8, "min-zoomed-font-size": 0, color: "#e6ebf5", "text-opacity": 1 } },
     { selector: "edge.lit", style: { opacity: 0.95, width: 2 } },
     { selector: "node.chosen", style: { "border-width": 2, "border-color": "#ffffff", "min-zoomed-font-size": 0 } },
     { selector: ".hidden", style: { display: "none" } },
   ];
 
-  /** Force-simulation settings: strong repulsion, springs along edges (short for containment), mild gravity. */
-  function runForceLayout() {
-    networkCy.layout({
-      name: "cose", animate: false, randomize: true, fit: true, padding: 30, numIter: 2500,
-      nodeRepulsion: () => 90000, nodeOverlap: 20, gravity: 0.6, componentSpacing: 80,
-      idealEdgeLength: (edge) => (edge.data("kind") === "contains" ? 30 : 110),
-      edgeElasticity: (edge) => (edge.data("kind") === "contains" ? 200 : 60),
+  /**
+   * Force-simulation settings. Springs inside a group are short and stiff, springs between groups long
+   * and loose: each module gathers into a tight cluster, and clusters keep their distance.
+   */
+  function runForceLayout(randomize) {
+    const springLength = (edge) => {
+      if (edge.data("crossesGroups")) return 220;
+      return edge.data("kind") === "contains" ? 30 : 70;
+    };
+    const springStiffness = (edge) => {
+      if (edge.data("crossesGroups")) return 15;
+      return edge.data("kind") === "contains" ? 150 : 100;
+    };
+    // Imports are drawn but left out of the simulation: modules import each other, and those
+    // springs pull every module to the centre, while calls already tie the code together.
+    networkCy.elements().not("edge[kind = 'imports']").layout({
+      name: "cose", animate: false, randomize, fit: randomize, padding: 30, numIter: randomize ? 3000 : 1000,
+      nodeRepulsion: () => 45000, nodeOverlap: 30, gravity: 0.4, componentSpacing: 120,
+      idealEdgeLength: springLength, edgeElasticity: springStiffness,
     }).run();
   }
 
@@ -184,6 +122,11 @@
 
   /** Select a ball, centre on it and show its details (search box and panel links call this). */
   function focusNode(key) {
+    const hiddenIn = foldedAncestors(key, unfolded);
+    if (hiddenIn.length) {  // a method inside a folded class: unfold it first
+      hiddenIn.forEach((ancestor) => unfolded.add(ancestor));
+      rebuild();
+    }
     const node = networkCy.getElementById(key);
     if (node.empty()) return;
     node.removeClass("hidden");
@@ -200,17 +143,20 @@
     if (menu.value === "") return;
     const steps = data.traces[Number(menu.value)].steps;
     const ranIds = new Set();
+    // A step is drawn on its visible ball: a method of a folded class lights the class.
+    const drawnAs = (key) => (shared.nodeByKey.has(key) ? visibleKey(key, unfolded) : null);
     for (const step of steps) {
-      if (!nodeByKey.has(step.key)) continue;
-      ranIds.add(step.key);
-      const caller = step.parent === null ? null : steps[step.parent].key;
-      if (!caller || !nodeByKey.has(caller)) continue;
-      const staticId = `calls|${caller}|${step.key}`;
-      const runtimeId = `runtime|${caller}|${step.key}`;
+      const callee = drawnAs(step.key);
+      if (!callee) continue;
+      ranIds.add(callee);
+      const caller = step.parent === null ? null : drawnAs(steps[step.parent].key);
+      if (!caller || caller === callee) continue;
+      const staticId = `calls|${caller}|${callee}`;
+      const runtimeId = `runtime|${caller}|${callee}`;
       if (networkCy.getElementById(staticId).nonempty()) {
         ranIds.add(staticId);
       } else if (!ranIds.has(runtimeId)) {  // ran but absent from the static graph
-        networkCy.add({ group: "edges", data: { id: runtimeId, source: caller, target: step.key, kind: "calls", confidence: "runtime" } });
+        networkCy.add({ group: "edges", data: { id: runtimeId, source: caller, target: callee, kind: "calls", confidence: "runtime" } });
         ranIds.add(runtimeId);
       }
     }
@@ -241,17 +187,58 @@
     }
   }
 
+  /**
+   * Redraw after folding or unfolding. Balls that stay keep their place, new ones start
+   * next to the ball they came out of, and the simulation continues from there (no reshuffle).
+   */
+  function rebuild() {
+    const oldPositions = new Map(networkCy.nodes().map((node) => [node.id(), { ...node.position() }]));
+    networkCy.elements().remove();
+    networkCy.add(buildElements(unfolded));
+    networkCy.nodes().forEach((node) => {
+      const kept = oldPositions.get(node.id());
+      if (kept) { node.position(kept); return; }
+      let origin = null;  // the ball it was folded in
+      for (let current = shared.nodeByKey.get(node.id()).parent; current && !origin; current = shared.nodeByKey.get(current)?.parent) {
+        origin = oldPositions.get(current) || null;
+      }
+      const start = origin || { x: 0, y: 0 };
+      node.position({ x: start.x + (Math.random() - 0.5) * 60, y: start.y + (Math.random() - 0.5) * 60 });
+    });
+    hoveredKey = null;
+    if (chosenKey) chosenKey = visibleKey(chosenKey, unfolded);
+    applyFilters();
+    runForceLayout(false);
+    applyTrace();
+    refreshHighlight();
+  }
+
+  /** Double-click: unfold a folded class, fold an unfolded one, or fold the class a member belongs to. */
+  function toggleFold(key) {
+    if (isFolded(key, unfolded)) {
+      unfolded.add(key);
+    } else if (unfolded.has(key)) {
+      unfolded.delete(key);
+    } else {
+      const parent = shared.nodeByKey.get(key)?.parent;
+      if (!parent || !unfolded.has(parent)) return;  // a module, or a plain function: nothing to fold
+      unfolded.delete(parent);
+    }
+    rebuild();
+  }
+
   /** Create the Network view (once, when first shown: the force layout needs a visible container). */
   function buildNetwork() {
     networkCy = cytoscape({
-      container: document.getElementById("network"), elements: buildElements(), style: networkStyle, wheelSensitivity: 0.3,
+      container: document.getElementById("network"), elements: buildElements(unfolded), style: networkStyle, wheelSensitivity: 0.3,
     });
     networkCy.on("mouseover", "node", (event) => { hoveredKey = event.target.id(); refreshHighlight(); });
     networkCy.on("mouseout", "node", () => { hoveredKey = null; refreshHighlight(); });
     networkCy.on("tap", "node", (event) => choose(event.target.id()));
     networkCy.on("tap", (event) => { if (event.target === networkCy) choose(null); });
+    networkCy.on("dbltap", "node", (event) => toggleFold(event.target.id()));
     applyFilters();
-    runForceLayout();
+    runForceLayout(true);
     applyTrace();
   }
 
