@@ -4,7 +4,7 @@
  * node's `parent`). On open, classes are collapsed; the expand-collapse
  * plugin then moves the edges of hidden children onto the collapsed box.
  *
- * What trace.js needs is shared on `window.graphcode` (see the end).
+ * What trace.js and network.js need is shared on `window.graphcode` (see the end).
  */
 (function () {
   "use strict";
@@ -218,7 +218,7 @@
   }
 
   function focus(key) {
-    if (window.graphcode.focusInNetwork) return window.graphcode.focusInNetwork(key);  // Network mode is showing
+    if (focusHooks.some((focusElsewhere) => focusElsewhere(key))) return;  // e.g. Network mode is showing
     const node = reveal(key);
     if (node.empty()) return;
     select(node);
@@ -279,6 +279,7 @@
   }
 
   const detailsHooks = [];  // functions (key, panel) adding lines to the details panel
+  const focusHooks = [];  // functions (key) -> true if they focused the key in another view
 
   // --- events ---------------------------------------------------------------------
 
@@ -317,6 +318,9 @@
 
   collapseDefault();
 
-  // Shared with trace.js, which is loaded after this file.
-  window.graphcode = { data, cy, expandCollapse, nodeByKey, detailsHooks, element, collapseDefault, focus, showDetails, shortName, isPrivate, KIND_COLORS, focusInNetwork: null };
+  // Shared with trace.js and network.js, which are loaded after this file.
+  window.graphcode = {
+    data, cy, expandCollapse, nodeByKey, detailsHooks, focusHooks,
+    element, collapseDefault, focus, showDetails, shortName, isPrivate,
+  };
 })();

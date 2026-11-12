@@ -25,14 +25,18 @@
 
   // --- groups, colours, sizes ------------------------------------------------------
 
-  /** Subpackage of a key: "pkg.sub.mod:f" -> "sub"; a module directly in the root keeps the root's name. */
+  /**
+   * Group of a key: the first level below the root package, module or subpackage alike
+   * ("pkg.sub.mod:f" -> "sub", "pkg.dag:DAG" -> "dag"); the root itself keeps its name.
+   * Grouping by subpackages only would give a flat package (no subpackages) a single colour.
+   */
   function groupOf(key) {
     const parts = key.split(":")[0].split(".");
     return parts.length >= 2 ? parts[1] : parts[0];
   }
 
   const groupNames = [...new Set(graph.nodes.map((node) => groupOf(node.key)))].sort();
-  /** Evenly spread hues, bright enough for a dark background. */
+  /** Evenly spread hues, bright enough for a dark background; starting at 200 (blue) puts the first groups in cool colours. */
   const groupColor = new Map(groupNames.map((name, index) => [name, `hsl(${Math.round((index * 360) / groupNames.length + 200) % 360}, 75%, 60%)`]));
 
   /** The ball as an SVG picture: a radial gradient with its bright spot up and left gives the 3D look. */
@@ -42,6 +46,16 @@
       + `<stop offset="0.25" stop-color="${color}"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></radialGradient></defs>`
       + `<circle cx="50" cy="50" r="49" fill="${color}"/><circle cx="50" cy="50" r="49" fill="url(#g)"/></svg>`;
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  }
+
+  const groupBall = new Map(groupNames.map((name) => [name, ballImage(groupColor.get(name))]));  // one picture per group
+
+  /** Private: the node itself, or a class or function holding it, has a private name. */
+  function isHiddenAsPrivate(key) {
+    for (let current = key; current; current = nodeByKey.get(current)?.parent) {
+      if (isPrivate(current)) return true;
+    }
+    return false;
   }
 
   /** Connections per key: graph edges in both directions plus containment (parent to child). */
@@ -57,6 +71,7 @@
 
   // --- building the network ---------------------------------------------------------
 
+  /** Cytoscape elements: one ball per node, a faint containment edge to its parent, and the graph's edges. */
   function buildElements() {
     const counts = connectionCounts();
     const elements = [];
@@ -65,9 +80,9 @@
       elements.push({
         group: "nodes",
         data: {
-          id: node.key, label: shortName(node.key), kind: node.kind, private: isPrivate(node.key), connections,
+          id: node.key, label: shortName(node.key), kind: node.kind, private: isHiddenAsPrivate(node.key), connections,
           size: Math.min(70, 12 + 7 * Math.sqrt(connections)), big: connections >= BIG_NODE_DEGREE,
-          image: ballImage(groupColor.get(groupOf(node.key))), color: groupColor.get(groupOf(node.key)),
+          image: groupBall.get(groupOf(node.key)), color: groupColor.get(groupOf(node.key)),
         },
       });
       if (node.parent) {
@@ -86,6 +101,7 @@
     return elements;
   }
 
+  /** Look of Network mode: shaded balls with a soft halo, thin translucent edges, then trace and highlight states. */
   const networkStyle = [
     {
       selector: "node",
@@ -97,7 +113,7 @@
         "text-outline-color": "#07090f", "text-outline-width": 3, "min-zoomed-font-size": 8,  // small balls: label appears when zoomed in
       },
     },
-    { selector: "node[?big]", style: { "min-zoomed-font-size": 0, "font-size": 12, "font-weight": "bold" } },
+    { selector: "node[?big]", style: { "min-zoomed-font-size": 0, "font-size": 14, "font-weight": "bold" } },
     {
       selector: "edge",
       style: {
@@ -159,6 +175,7 @@
     lit.addClass("lit");
   }
 
+  /** Make `key` the chosen ball (or none) and show its details. */
   function choose(key) {
     chosenKey = key;
     refreshHighlight();
@@ -200,8 +217,19 @@
     const ran = networkCy.collection([...ranIds].map((id) => networkCy.getElementById(id)));
     ran.addClass("ran");
     networkCy.elements().not(ran).addClass("untraced");
+    applyFilters();  // the new runtime edges follow the "calls" checkbox too
   }
 
+  /** After a trace change: trace.js reset the details panel, so forget the chosen ball and give Network's hint. */
+  function afterTraceChange() {
+    applyTrace();
+    if (!networkCy || document.body.dataset.mode !== "network") return;
+    chosenKey = null;
+    refreshHighlight();
+    document.getElementById("details").replaceChildren(element("p", "Click a ball to see its code and neighbours.", "hint"));
+  }
+
+  /** One legend line per group, with a ball of its colour. */
   function fillLegend() {
     const list = document.getElementById("network-groups");
     for (const name of groupNames) {
@@ -213,6 +241,7 @@
     }
   }
 
+  /** Create the Network view (once, when first shown: the force layout needs a visible container). */
   function buildNetwork() {
     networkCy = cytoscape({
       container: document.getElementById("network"), elements: buildElements(), style: networkStyle, wheelSensitivity: 0.3,
@@ -228,8 +257,8 @@
 
   // --- the mode switch -------------------------------------------------------------------------
 
-  /** Show "classic" or "network"; the choice is remembered in localStorage (which may be unavailable). */
-  function setMode(mode) {
+  /** Show "classic" or "network"; a choice made with the buttons is remembered in localStorage (if available). */
+  function setMode(mode, remember) {
     const network = mode === "network";
     document.body.dataset.mode = mode;
     document.getElementById("graph").hidden = network;
@@ -237,13 +266,13 @@
     document.getElementById("network-legend").hidden = !network;
     document.getElementById("mode-classic").classList.toggle("active", !network);
     document.getElementById("mode-network").classList.toggle("active", network);
-    shared.focusInNetwork = network ? focusNode : null;
     if (network) {
       if (networkCy) networkCy.resize(); else buildNetwork();
     } else {
       shared.cy.resize();  // the classic canvas had no size while hidden
       shared.cy.fit(undefined, 20);
     }
+    if (!remember) return;  // a #mode=... link must not change the visitor's default
     try { localStorage.setItem("graphcode-mode", mode); } catch (error) { /* private window: not remembered */ }
   }
 
@@ -255,10 +284,16 @@
   }
 
   fillLegend();
-  document.getElementById("mode-classic").addEventListener("click", () => setMode("classic"));
-  document.getElementById("mode-network").addEventListener("click", () => setMode("network"));
-  document.getElementById("trace-select").addEventListener("change", applyTrace);
+  // Search, panel links and call-tree rows call viewer.js's focus(): in Network mode, focus the ball here instead.
+  shared.focusHooks.push((key) => {
+    if (document.body.dataset.mode !== "network") return false;
+    focusNode(key);
+    return true;
+  });
+  document.getElementById("mode-classic").addEventListener("click", () => setMode("classic", true));
+  document.getElementById("mode-network").addEventListener("click", () => setMode("network", true));
+  document.getElementById("trace-select").addEventListener("change", afterTraceChange);
   for (const box of document.querySelectorAll("#toolbar input[type=checkbox]")) box.addEventListener("change", applyFilters);
   document.getElementById("fit").addEventListener("click", () => { if (networkCy && !document.getElementById("network").hidden) networkCy.fit(undefined, 30); });
-  if (initialMode() === "network") setMode("network");
+  if (initialMode() === "network") setMode("network", false);
 })();

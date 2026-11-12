@@ -85,7 +85,7 @@ ol.call-tree a.unmatched { color: var(--muted); cursor: default; }
 .trace-calls { color: var(--trace); font-weight: 600; }
 .line.ran { border-color: var(--calls); border-top-width: 4px; }
 .line.runtime { border-color: var(--trace); border-top-style: dotted; border-top-width: 3px; }
-body:not(.tracing) .trace-only { display: none; }
+body:not(.tracing) #legend .trace-only { display: none; }  /* #legend: beats "#legend li" */
 
 /* Network mode (network.js): dark theme, switched by body[data-mode="network"] */
 #mode-group { gap: 0; }
