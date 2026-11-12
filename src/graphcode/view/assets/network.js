@@ -65,9 +65,34 @@
     { selector: ".hidden", style: { display: "none" } },
   ];
 
+  /** A number in [0, 1) computed from a text: the same text always gives the same number. */
+  function stableFraction(text) {
+    let hash = 0;
+    for (const character of text) hash = (hash * 31 + character.codePointAt(0)) % 1000003;
+    return hash / 1000003;
+  }
+
   /**
-   * Force-simulation settings. Springs inside a group are short and stiff, springs between groups long
-   * and loose: each module gathers into a tight cluster, and clusters keep their distance.
+   * Starting positions without chance, so every reload gives the same picture: the groups on a
+   * circle, each ball near its group's spot, shifted by an amount computed from its name.
+   */
+  function placeAtStart() {
+    const radius = 120 * groupNames.length;
+    networkCy.nodes().forEach((node) => {
+      const angle = (2 * Math.PI * groupNames.indexOf(node.data("groupName"))) / groupNames.length;
+      const spread = 2 * Math.PI * stableFraction(node.id());
+      node.position({
+        x: radius * Math.cos(angle) + 80 * Math.cos(spread),
+        y: radius * Math.sin(angle) + 80 * Math.sin(spread),
+      });
+    });
+  }
+
+  /**
+   * Force simulation on the code's structure as written: imports, inheritance and containment.
+   * Calls are drawn on top but do not move anything, so a call between distant balls shows
+   * coupling across the structure. Springs inside a group are short and stiff, between groups
+   * long and loose.
    */
   function runForceLayout() {
     const springLength = (edge) => {
@@ -78,10 +103,9 @@
       if (edge.data("crossesGroups")) return 30;
       return edge.data("kind") === "contains" ? 150 : 100;
     };
-    // Imports are drawn but left out of the simulation: modules import each other, and those
-    // springs pull every module to the centre, while calls already tie the code together.
-    networkCy.elements().not("edge[kind = 'imports']").layout({
-      name: "cose", animate: false, randomize: true, fit: true, padding: 30, numIter: 3000,
+    placeAtStart();
+    networkCy.elements().not("edge[kind = 'calls']").layout({
+      name: "cose", animate: false, randomize: false, fit: true, padding: 30, numIter: 3000,
       nodeRepulsion: () => 45000, nodeOverlap: 30, gravity: 0.4, componentSpacing: 120,
       idealEdgeLength: springLength, edgeElasticity: springStiffness,
     }).run();

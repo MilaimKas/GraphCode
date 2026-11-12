@@ -122,7 +122,7 @@
         data: {
           id: node.key, label: shortName(node.key), kind: node.kind, private: isHiddenAsPrivate(node.key),
           connections: count, size: Math.min(56, 10 + 5.5 * Math.sqrt(count)), big: count >= BIG_NODE_DEGREE,
-          image: groupBall.get(groupOf(node.key)), color: groupColor.get(groupOf(node.key)),
+          groupName: groupOf(node.key), image: groupBall.get(groupOf(node.key)), color: groupColor.get(groupOf(node.key)),
           folded: isFolded(node.key, unfolded),
         },
       };
