@@ -1,0 +1,264 @@
+/* graphcode viewer, "Network" mode: the same graph as a force-directed network on a dark background.
+ *
+ * Every definition is a shaded ball: size grows with its number of connections,
+ * colour is its subpackage. Positions come from Cytoscape's built-in "cose"
+ * force simulation (nodes repel, edges are springs, gravity pulls to the centre).
+ * Containment (module holds class holds method) is a short, faint spring.
+ * Hover or click lights a ball and its neighbours; a chosen trace makes what
+ * ran glow and dims the rest.
+ *
+ * Own Cytoscape instance in its own container, built on first use (the force
+ * layout needs a visible container). Uses what viewer.js shares on window.graphcode.
+ */
+(function () {
+  "use strict";
+
+  const shared = window.graphcode;
+  const { data, nodeByKey, element, showDetails, shortName, isPrivate } = shared;
+  const graph = data.graph;
+  const RUNNING_COLOR = "#ffb300";
+  const BIG_NODE_DEGREE = 6;  // balls with at least this many connections are always labelled
+
+  let networkCy = null;  // created on first switch to Network mode
+  let hoveredKey = null;
+  let chosenKey = null;
+
+  // --- groups, colours, sizes ------------------------------------------------------
+
+  /** Subpackage of a key: "pkg.sub.mod:f" -> "sub"; a module directly in the root keeps the root's name. */
+  function groupOf(key) {
+    const parts = key.split(":")[0].split(".");
+    return parts.length >= 2 ? parts[1] : parts[0];
+  }
+
+  const groupNames = [...new Set(graph.nodes.map((node) => groupOf(node.key)))].sort();
+  /** Evenly spread hues, bright enough for a dark background. */
+  const groupColor = new Map(groupNames.map((name, index) => [name, `hsl(${Math.round((index * 360) / groupNames.length + 200) % 360}, 75%, 60%)`]));
+
+  /** The ball as an SVG picture: a radial gradient with its bright spot up and left gives the 3D look. */
+  function ballImage(color) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><defs>`
+      + `<radialGradient id="g" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#fff" stop-opacity="0.95"/>`
+      + `<stop offset="0.25" stop-color="${color}"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></radialGradient></defs>`
+      + `<circle cx="50" cy="50" r="49" fill="${color}"/><circle cx="50" cy="50" r="49" fill="url(#g)"/></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  }
+
+  /** Connections per key: graph edges in both directions plus containment (parent to child). */
+  function connectionCounts() {
+    const counts = new Map(graph.nodes.map((node) => [node.key, 0]));
+    const bump = (key) => counts.set(key, counts.get(key) + 1);
+    for (const edge of graph.edges) { bump(edge.source); bump(edge.target); }
+    for (const node of graph.nodes) {
+      if (node.parent) { bump(node.key); bump(node.parent); }
+    }
+    return counts;
+  }
+
+  // --- building the network ---------------------------------------------------------
+
+  function buildElements() {
+    const counts = connectionCounts();
+    const elements = [];
+    for (const node of graph.nodes) {
+      const connections = counts.get(node.key);
+      elements.push({
+        group: "nodes",
+        data: {
+          id: node.key, label: shortName(node.key), kind: node.kind, private: isPrivate(node.key), connections,
+          size: Math.min(70, 12 + 7 * Math.sqrt(connections)), big: connections >= BIG_NODE_DEGREE,
+          image: ballImage(groupColor.get(groupOf(node.key))), color: groupColor.get(groupOf(node.key)),
+        },
+      });
+      if (node.parent) {
+        elements.push({
+          group: "edges",
+          data: { id: `contains|${node.parent}|${node.key}`, source: node.parent, target: node.key, kind: "contains", color: groupColor.get(groupOf(node.key)) },
+        });
+      }
+    }
+    for (const edge of graph.edges) {
+      elements.push({
+        group: "edges",
+        data: { id: `${edge.kind}|${edge.source}|${edge.target}`, source: edge.source, target: edge.target, kind: edge.kind, confidence: edge.confidence },
+      });
+    }
+    return elements;
+  }
+
+  const networkStyle = [
+    {
+      selector: "node",
+      style: {
+        width: "data(size)", height: "data(size)", "background-image": "data(image)", "background-fit": "cover",
+        "background-opacity": 0, "border-width": 0, "underlay-color": "data(color)", "underlay-padding": 3,
+        "underlay-opacity": 0.12, "underlay-shape": "ellipse",
+        label: "data(label)", color: "#e6ebf5", "font-size": 13, "text-valign": "bottom", "text-margin-y": 3,
+        "text-outline-color": "#07090f", "text-outline-width": 3, "min-zoomed-font-size": 8,  // small balls: label appears when zoomed in
+      },
+    },
+    { selector: "node[?big]", style: { "min-zoomed-font-size": 0, "font-size": 12, "font-weight": "bold" } },
+    {
+      selector: "edge",
+      style: {
+        width: 1, "curve-style": "straight", "line-color": "#8fa3c4", "target-arrow-color": "#8fa3c4",
+        "target-arrow-shape": "triangle", "arrow-scale": 0.55, opacity: 0.4,
+      },
+    },
+    { selector: "edge[kind = 'imports']", style: { "line-color": "#42a5f5", "target-arrow-color": "#42a5f5" } },
+    { selector: "edge[kind = 'inherits']", style: { "line-color": "#ce93d8", "target-arrow-color": "#ce93d8", width: 1.6, opacity: 0.5 } },
+    { selector: "edge[kind = 'contains']", style: { "line-color": "data(color)", "target-arrow-shape": "none", opacity: 0.2 } },
+    { selector: "edge[confidence = 'inferred']", style: { "line-style": "dashed" } },
+    { selector: "edge:loop", style: { "curve-style": "bezier" } },
+    // trace overlay
+    { selector: ".untraced", style: { opacity: 0.1 } },
+    { selector: "node.ran", style: { "underlay-color": RUNNING_COLOR, "underlay-opacity": 0.5, "underlay-padding": 7 } },
+    { selector: "edge.ran", style: { "line-color": RUNNING_COLOR, "target-arrow-color": RUNNING_COLOR, width: 2.2, opacity: 0.95 } },
+    { selector: "edge[confidence = 'runtime']", style: { "line-style": "dotted" } },
+    // hover and click
+    { selector: ".dim", style: { opacity: 0.07 } },
+    { selector: "node.lit", style: { opacity: 1, "underlay-opacity": 0.55, "underlay-padding": 8, "min-zoomed-font-size": 0 } },
+    { selector: "edge.lit", style: { opacity: 0.95, width: 2 } },
+    { selector: "node.chosen", style: { "border-width": 2, "border-color": "#ffffff", "min-zoomed-font-size": 0 } },
+    { selector: ".hidden", style: { display: "none" } },
+  ];
+
+  /** Force-simulation settings: strong repulsion, springs along edges (short for containment), mild gravity. */
+  function runForceLayout() {
+    networkCy.layout({
+      name: "cose", animate: false, randomize: true, fit: true, padding: 30, numIter: 2500,
+      nodeRepulsion: () => 90000, nodeOverlap: 20, gravity: 0.6, componentSpacing: 80,
+      idealEdgeLength: (edge) => (edge.data("kind") === "contains" ? 30 : 110),
+      edgeElasticity: (edge) => (edge.data("kind") === "contains" ? 200 : 60),
+    }).run();
+  }
+
+  // --- filters, highlight, trace -------------------------------------------------------------
+
+  /** Apply the toolbar's edge-kind, inferred and private checkboxes. */
+  function applyFilters() {
+    if (!networkCy) return;
+    networkCy.elements().removeClass("hidden");
+    for (const box of document.querySelectorAll("input[data-edge-kind]")) {
+      if (!box.checked) networkCy.edges(`[kind = '${box.dataset.edgeKind}']`).addClass("hidden");
+    }
+    if (!document.getElementById("show-inferred").checked) networkCy.edges("[confidence = 'inferred']").addClass("hidden");
+    if (!document.getElementById("show-private").checked) networkCy.nodes("[?private]").addClass("hidden");
+  }
+
+  /** Light the hovered ball (else the chosen one) and its neighbours; dim the rest. */
+  function refreshHighlight() {
+    networkCy.elements().removeClass("lit dim");
+    const key = hoveredKey || chosenKey;
+    networkCy.nodes().removeClass("chosen");
+    if (chosenKey) networkCy.getElementById(chosenKey).addClass("chosen");
+    if (!key) return;
+    const node = networkCy.getElementById(key);
+    const lit = node.closedNeighborhood();
+    networkCy.elements().not(lit).addClass("dim");
+    lit.addClass("lit");
+  }
+
+  function choose(key) {
+    chosenKey = key;
+    refreshHighlight();
+    if (key) showDetails(key);
+  }
+
+  /** Select a ball, centre on it and show its details (search box and panel links call this). */
+  function focusNode(key) {
+    const node = networkCy.getElementById(key);
+    if (node.empty()) return;
+    node.removeClass("hidden");
+    choose(key);
+    networkCy.animate({ center: { eles: node }, zoom: Math.max(networkCy.zoom(), 1.2) }, { duration: 250 });
+  }
+
+  /** Show the trace picked in the toolbar menu: what ran glows, the rest dims. */
+  function applyTrace() {
+    if (!networkCy) return;
+    networkCy.remove(networkCy.edges("[confidence = 'runtime']"));
+    networkCy.elements().removeClass("ran untraced");
+    const menu = document.getElementById("trace-select");
+    if (menu.value === "") return;
+    const steps = data.traces[Number(menu.value)].steps;
+    const ranIds = new Set();
+    for (const step of steps) {
+      if (!nodeByKey.has(step.key)) continue;
+      ranIds.add(step.key);
+      const caller = step.parent === null ? null : steps[step.parent].key;
+      if (!caller || !nodeByKey.has(caller)) continue;
+      const staticId = `calls|${caller}|${step.key}`;
+      const runtimeId = `runtime|${caller}|${step.key}`;
+      if (networkCy.getElementById(staticId).nonempty()) {
+        ranIds.add(staticId);
+      } else if (!ranIds.has(runtimeId)) {  // ran but absent from the static graph
+        networkCy.add({ group: "edges", data: { id: runtimeId, source: caller, target: step.key, kind: "calls", confidence: "runtime" } });
+        ranIds.add(runtimeId);
+      }
+    }
+    const ran = networkCy.collection([...ranIds].map((id) => networkCy.getElementById(id)));
+    ran.addClass("ran");
+    networkCy.elements().not(ran).addClass("untraced");
+  }
+
+  function fillLegend() {
+    const list = document.getElementById("network-groups");
+    for (const name of groupNames) {
+      const item = element("li", name);
+      const ball = element("span", undefined, "ball");
+      ball.style.background = `radial-gradient(circle at 35% 30%, #fff, ${groupColor.get(name)} 30%, #000 130%)`;
+      item.prepend(ball);
+      list.append(item);
+    }
+  }
+
+  function buildNetwork() {
+    networkCy = cytoscape({
+      container: document.getElementById("network"), elements: buildElements(), style: networkStyle, wheelSensitivity: 0.3,
+    });
+    networkCy.on("mouseover", "node", (event) => { hoveredKey = event.target.id(); refreshHighlight(); });
+    networkCy.on("mouseout", "node", () => { hoveredKey = null; refreshHighlight(); });
+    networkCy.on("tap", "node", (event) => choose(event.target.id()));
+    networkCy.on("tap", (event) => { if (event.target === networkCy) choose(null); });
+    applyFilters();
+    runForceLayout();
+    applyTrace();
+  }
+
+  // --- the mode switch -------------------------------------------------------------------------
+
+  /** Show "classic" or "network"; the choice is remembered in localStorage (which may be unavailable). */
+  function setMode(mode) {
+    const network = mode === "network";
+    document.body.dataset.mode = mode;
+    document.getElementById("graph").hidden = network;
+    document.getElementById("network").hidden = !network;
+    document.getElementById("network-legend").hidden = !network;
+    document.getElementById("mode-classic").classList.toggle("active", !network);
+    document.getElementById("mode-network").classList.toggle("active", network);
+    shared.focusInNetwork = network ? focusNode : null;
+    if (network) {
+      if (networkCy) networkCy.resize(); else buildNetwork();
+    } else {
+      shared.cy.resize();  // the classic canvas had no size while hidden
+      shared.cy.fit(undefined, 20);
+    }
+    try { localStorage.setItem("graphcode-mode", mode); } catch (error) { /* private window: not remembered */ }
+  }
+
+  /** Mode from the URL (#mode=network), else the remembered one, else classic. */
+  function initialMode() {
+    if (location.hash.slice(1).split("&").includes("mode=network")) return "network";
+    if (location.hash.slice(1).split("&").includes("mode=classic")) return "classic";
+    try { return localStorage.getItem("graphcode-mode") === "network" ? "network" : "classic"; } catch (error) { return "classic"; }
+  }
+
+  fillLegend();
+  document.getElementById("mode-classic").addEventListener("click", () => setMode("classic"));
+  document.getElementById("mode-network").addEventListener("click", () => setMode("network"));
+  document.getElementById("trace-select").addEventListener("change", applyTrace);
+  for (const box of document.querySelectorAll("#toolbar input[type=checkbox]")) box.addEventListener("change", applyFilters);
+  document.getElementById("fit").addEventListener("click", () => { if (networkCy && !document.getElementById("network").hidden) networkCy.fit(undefined, 30); });
+  if (initialMode() === "network") setMode("network");
+})();

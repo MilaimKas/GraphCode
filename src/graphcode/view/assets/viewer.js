@@ -218,6 +218,7 @@
   }
 
   function focus(key) {
+    if (window.graphcode.focusInNetwork) return window.graphcode.focusInNetwork(key);  // Network mode is showing
     const node = reveal(key);
     if (node.empty()) return;
     select(node);
@@ -317,5 +318,5 @@
   collapseDefault();
 
   // Shared with trace.js, which is loaded after this file.
-  window.graphcode = { data, cy, expandCollapse, nodeByKey, detailsHooks, element, collapseDefault, focus };
+  window.graphcode = { data, cy, expandCollapse, nodeByKey, detailsHooks, element, collapseDefault, focus, showDetails, shortName, isPrivate, KIND_COLORS, focusInNetwork: null };
 })();

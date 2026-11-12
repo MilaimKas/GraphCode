@@ -86,3 +86,25 @@ ol.call-tree a.unmatched { color: var(--muted); cursor: default; }
 .line.ran { border-color: var(--calls); border-top-width: 4px; }
 .line.runtime { border-color: var(--trace); border-top-style: dotted; border-top-width: 3px; }
 body:not(.tracing) .trace-only { display: none; }
+
+/* Network mode (network.js): dark theme, switched by body[data-mode="network"] */
+#mode-group { gap: 0; }
+#mode-group button { border-radius: 0; }
+#mode-group button:first-child { border-radius: 4px 0 0 4px; }
+#mode-group button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+#mode-group button.active { background: var(--module); border-color: var(--module); color: #fff; }
+#network { flex: 1; min-width: 0; background: #07090f; }
+body[data-mode="network"] {
+  --ink: #d5dbe6; --muted: #8590a3; --line: #262c3a; --surface: #0e121b; --page: #0b0e16;
+}
+body[data-mode="network"] #graph, body[data-mode="network"] #legend { display: none; }
+body[data-mode="network"] #expand-all, body[data-mode="network"] #collapse-classes { display: none; }
+body[data-mode="network"] #trace-banner { background: #2a2410; border-color: #5c4d10; }
+#network-groups { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+#network-groups li { display: flex; align-items: center; gap: 8px; }
+.ball { width: 14px; height: 14px; border-radius: 50%; }
+body[data-mode="network"] button, body[data-mode="network"] #search, body[data-mode="network"] select {
+  color: var(--ink); background: var(--surface); border-color: #3a4256;
+}
+body[data-mode="network"] button:hover { background: #1b2130; }
+body[data-mode="network"] #mode-group button.active { background: var(--module); border-color: var(--module); color: #fff; }

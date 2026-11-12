@@ -177,8 +177,9 @@
   } else {
     traces.forEach((trace, index) => menu.append(new Option(trace.header.scenario, String(index))));
     menu.addEventListener("change", () => showTrace(menu.value === "" ? null : traces[Number(menu.value)]));
-    // viewer.html#trace=<scenario> opens with that trace shown.
-    const wanted = decodeURIComponent(location.hash.replace(/^#trace=/, ""));
+    // viewer.html#trace=<scenario> opens with that trace shown (other parts, e.g. "mode=network&", are skipped).
+    const traceParameter = location.hash.slice(1).split("&").find((part) => part.startsWith("trace="));
+    const wanted = traceParameter ? decodeURIComponent(traceParameter.slice("trace=".length)) : "";
     const index = traces.findIndex((trace) => trace.header.scenario === wanted);
     if (index >= 0) {
       menu.value = String(index);
