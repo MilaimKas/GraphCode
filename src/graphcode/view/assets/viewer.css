@@ -83,8 +83,8 @@ ol.call-tree a.unmatched { color: var(--muted); cursor: default; }
 .count { color: var(--trace); }
 .trace-error { color: var(--error); }
 .trace-calls { color: var(--trace); font-weight: 600; }
-.line.ran { border-color: var(--calls); border-top-width: 4px; }
-.line.runtime { border-color: var(--trace); border-top-style: dotted; border-top-width: 3px; }
+.line.ran { border-color: #f59e0b; border-top-width: 4px; }
+.line.runtime { border-color: #d50000; border-top-width: 4px; }
 body:not(.tracing) #legend .trace-only { display: none; }  /* #legend: beats "#legend li" */
 
 /* Network mode (network.js): dark theme, switched by body[data-mode="network"] */
@@ -116,3 +116,12 @@ ul.notes { margin: 6px 0 0; padding-left: 16px; color: var(--muted); display: gr
 #panel-resizer { flex: 0 0 6px; cursor: col-resize; background: var(--line); opacity: 0.6; }
 #panel-resizer:hover, body.resizing #panel-resizer { opacity: 1; background: var(--muted); }
 body.resizing { cursor: col-resize; user-select: none; }
+
+/* step-through player (player.js) */
+.player { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 6px 0; }
+.player button { padding: 2px 8px; }
+.player-status { color: var(--muted); font-size: 12px; margin-left: 4px; }
+ol.call-tree li { cursor: pointer; border-radius: 3px; }
+ol.call-tree li:hover { background: var(--line); }
+ol.call-tree li.current-step { background: #1565c0; color: #fff; }
+ol.call-tree li.current-step .count, ol.call-tree li.current-step .hint, ol.call-tree li.current-step .trace-error { color: #fff; }

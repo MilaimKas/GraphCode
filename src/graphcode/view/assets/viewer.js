@@ -280,6 +280,7 @@
 
   const detailsHooks = [];  // functions (key, panel) adding lines to the details panel
   const focusHooks = [];  // functions (key) -> true if they focused the key in another view
+  const stepHooks = [];  // functions (key, callerKey) lighting the player's current step; (null) clears it
 
   // --- events ---------------------------------------------------------------------
 
@@ -320,7 +321,7 @@
 
   // Shared with trace.js and network.js, which are loaded after this file.
   window.graphcode = {
-    data, cy, expandCollapse, nodeByKey, detailsHooks, focusHooks,
+    data, cy, expandCollapse, nodeByKey, detailsHooks, focusHooks, stepHooks,
     element, collapseDefault, focus, showDetails, shortName, isPrivate,
   };
 })();

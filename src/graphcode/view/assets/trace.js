@@ -1,29 +1,36 @@
 /* graphcode viewer: trace overlay, call-tree panel and staleness banner.
  *
  * Picking a trace in the toolbar menu:
- * - nodes that ran are outlined, everything else fades;
- * - calls that ran are drawn thick; calls that ran but are missing from the
- *   static graph are added as new "runtime" edges (orange, dotted);
+ * - nodes that ran are outlined in amber, everything else fades;
+ * - calls that ran are drawn thick in amber; calls that ran but are missing
+ *   from the static graph are added as new "runtime" edges, in red;
  * - boxes are opened exactly where something ran, closed elsewhere;
- * - the panel lists the call tree; clicking a step shows its node and code.
+ * - the panel lists the call tree (player.js adds the step-through controls).
  *
- * Uses what viewer.js shares on window.graphcode.
+ * Uses what viewer.js shares on window.graphcode. Announces each change of trace
+ * with a "graphcode:tracechange" event on document (detail: the trace, or null).
  */
 (function () {
   "use strict";
 
-  const { data, cy, expandCollapse, nodeByKey, detailsHooks } = window.graphcode;
-  const { element, collapseDefault, focus } = window.graphcode;
+  const { data, cy, expandCollapse, nodeByKey, detailsHooks, stepHooks } = window.graphcode;
+  const { element, collapseDefault } = window.graphcode;
+  const RAN_COLOR = "#f59e0b";  // amber, as in Network mode
+  const RUNTIME_ONLY_COLOR = "#d50000";  // red: a call the static graph missed
+  const CURRENT_STEP_COLOR = "#1565c0";  // blue: the player's current step
   const traces = data.traces;
   const MAX_TREE_ROWS = 3000;  // a longer call tree is cut in the panel (the graph shows everything)
 
   cy.style()
-    .selector("node.ran").style({ "border-width": 3.5, "border-color": "#e65100" })
-    .selector("edge.ran").style({ width: 3.5, opacity: 1 })
+    .selector("node.ran").style({ "border-width": 4, "border-color": RAN_COLOR })
+    .selector("edge.ran").style({ width: 4, opacity: 1, "line-color": RAN_COLOR, "target-arrow-color": RAN_COLOR })
     .selector("edge[confidence = 'runtime']")
-    .style({ "line-color": "#e65100", "target-arrow-color": "#e65100", "line-style": "dotted", width: 5 })
+    .style({ "line-color": RUNTIME_ONLY_COLOR, "target-arrow-color": RUNTIME_ONLY_COLOR, "line-style": "solid", width: 4.5 })
     .selector(".untraced").style({ opacity: 0.12 })
     .selector("node.selected").style({ opacity: 1 })  // a selected node stays visible even if it did not run
+    .selector("node.current").style({ "border-width": 7, "border-color": CURRENT_STEP_COLOR, opacity: 1 })
+    .selector("edge.current")
+    .style({ width: 7, "line-color": CURRENT_STEP_COLOR, "target-arrow-color": CURRENT_STEP_COLOR, opacity: 1, "z-index": 10 })
     .update();
 
   /**
@@ -52,6 +59,7 @@
       document.getElementById("trace-panel").hidden = true;
       document.getElementById("trace-banner").hidden = true;
       collapseDefault();
+      announce(null);
       return;
     }
     const steps = trace.steps;
@@ -71,7 +79,26 @@
     cy.elements().not(keep).addClass("untraced");
     showCallTree(trace, stepCalls);
     showBanner(trace);
+    announce(trace);
   }
+
+  /** Tell the player (and anything else listening) that the shown trace changed. */
+  function announce(trace) {
+    document.dispatchEvent(new CustomEvent("graphcode:tracechange", { detail: trace }));
+  }
+
+  /** Light the player's current step in Classic mode: the function, and the call that led to it. */
+  stepHooks.push((key, callerKey) => {
+    cy.elements().removeClass("current");
+    if (key === null || document.body.dataset.mode === "network") return;
+    const node = cy.getElementById(key);
+    if (node.empty()) return;  // not in the graph, or inside a box closed by hand
+    node.addClass("current");
+    if (callerKey) cy.getElementById(`calls|${callerKey}|${key}`).union(cy.getElementById(`runtime|${callerKey}|${key}`)).addClass("current");
+    const shown = cy.extent();
+    const { x, y } = node.position();
+    if (x < shown.x1 || x > shown.x2 || y < shown.y1 || y > shown.y2) cy.animate({ center: { eles: node } }, { duration: 300 });
+  });
 
   /** Calls per step: a step x2 under a parent x3 ran 6 times (steps are parents first). */
   function totalCalls(steps) {
@@ -127,12 +154,11 @@
   /** One line of the call tree: the qualified name (full, so nested functions read clearly), count, outcome. */
   function treeRow(step, calls) {
     const row = element("li");
+    row.dataset.step = String(step.id);  // a click makes it the player's current step (player.js)
     row.style.paddingLeft = `${step.depth * 14}px`;
     const name = step.key.includes(":") ? step.key.split(":")[1] : step.key;
     const shown = inGraph(step.key);
-    const label = element("a", name, shown ? "" : "unmatched");
-    if (shown) label.addEventListener("click", () => focus(step.key));
-    row.append(label);
+    row.append(element("a", name, shown ? "" : "unmatched"));
     if (step.count > 1) row.append(element("span", ` ×${step.count}`, "count"));
     if (step.outcome === "raise") row.append(element("span", ` raise ${step.exception}`, "trace-error"));
     if (step.outcome === "unfinished") row.append(element("span", " unfinished", "hint"));

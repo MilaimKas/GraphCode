@@ -18,10 +18,13 @@
   const { data, element, showDetails } = shared;
   const { groupNames, groupColor, buildElements, visibleKey, foldedAncestors, isFolded } = shared.networkElements;
   const RUNNING_COLOR = "#ffb300";
+  const RUNTIME_ONLY_COLOR = "#ff3d3d";  // red: a call that ran but is missing from the static graph
+  const CURRENT_STEP_COLOR = "#00e5ff";  // cyan: the player's current step
 
   let networkCy = null;  // created on first switch to Network mode
   let hoveredKey = null;
   let chosenKey = null;
+  let currentStep = null;  // the player's current step: { key, callerKey }, or null
   const unfolded = new Set();  // classes and functions whose members are shown (double-click toggles)
 
   /** Look of Network mode: shaded balls with a soft halo, thin translucent edges, then trace and highlight states. */
@@ -56,7 +59,10 @@
     { selector: ".untraced", style: { opacity: 0.1 } },
     { selector: "node.ran", style: { "underlay-color": RUNNING_COLOR, "underlay-opacity": 0.5, "underlay-padding": 7 } },
     { selector: "edge.ran", style: { "line-color": RUNNING_COLOR, "target-arrow-color": RUNNING_COLOR, width: 2.2, opacity: 0.95 } },
-    { selector: "edge[confidence = 'runtime']", style: { "line-style": "dotted" } },
+    { selector: "edge[confidence = 'runtime']", style: { "line-color": RUNTIME_ONLY_COLOR, "target-arrow-color": RUNTIME_ONLY_COLOR } },
+    // the player's current step
+    { selector: "node.current", style: { opacity: 1, "underlay-color": CURRENT_STEP_COLOR, "underlay-opacity": 0.7, "underlay-padding": 9 } },
+    { selector: "edge.current", style: { opacity: 1, width: 3.5, "line-color": CURRENT_STEP_COLOR, "target-arrow-color": CURRENT_STEP_COLOR } },
     // hover and click
     { selector: ".dim", style: { opacity: 0.07 } },
     { selector: "node.lit", style: { opacity: 1, "underlay-opacity": 0.55, "underlay-padding": 8, "min-zoomed-font-size": 0, color: "#e6ebf5", "text-opacity": 1 } },
@@ -235,6 +241,26 @@
     applyFilters();
     applyTrace();
     refreshHighlight();
+    showCurrentStep(false);
+  }
+
+  /** Light the player's current step on its visible balls (a method of a folded class lights the class). */
+  function showCurrentStep(panToIt) {
+    if (!networkCy) return;
+    networkCy.elements().removeClass("current");
+    if (!currentStep || !shared.nodeByKey.has(currentStep.key)) return;
+    const key = visibleKey(currentStep.key, unfolded);
+    const node = networkCy.getElementById(key);
+    node.addClass("current");
+    const callerKey = currentStep.callerKey && shared.nodeByKey.has(currentStep.callerKey)
+      ? visibleKey(currentStep.callerKey, unfolded) : null;
+    if (callerKey && callerKey !== key) {
+      networkCy.getElementById(`calls|${callerKey}|${key}`).union(networkCy.getElementById(`runtime|${callerKey}|${key}`)).addClass("current");
+    }
+    const shown = networkCy.extent();
+    const { x, y } = node.position();
+    const offScreen = x < shown.x1 || x > shown.x2 || y < shown.y1 || y > shown.y2;
+    if (panToIt && offScreen) networkCy.animate({ center: { eles: node } }, { duration: 300 });
   }
 
   /** Spread `balls` evenly on a circle around `centre`, wider when there are more of them. */
@@ -309,6 +335,10 @@
     if (document.body.dataset.mode !== "network") return false;
     focusNode(key);
     return true;
+  });
+  shared.stepHooks.push((key, callerKey) => {
+    currentStep = key === null ? null : { key, callerKey };
+    if (document.body.dataset.mode === "network") showCurrentStep(true);
   });
   document.getElementById("mode-classic").addEventListener("click", () => setMode("classic", true));
   document.getElementById("mode-network").addEventListener("click", () => setMode("network", true));
