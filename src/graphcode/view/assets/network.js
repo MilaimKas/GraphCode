@@ -69,19 +69,19 @@
    * Force-simulation settings. Springs inside a group are short and stiff, springs between groups long
    * and loose: each module gathers into a tight cluster, and clusters keep their distance.
    */
-  function runForceLayout(randomize) {
+  function runForceLayout() {
     const springLength = (edge) => {
-      if (edge.data("crossesGroups")) return 220;
+      if (edge.data("crossesGroups")) return 140;
       return edge.data("kind") === "contains" ? 30 : 70;
     };
     const springStiffness = (edge) => {
-      if (edge.data("crossesGroups")) return 15;
+      if (edge.data("crossesGroups")) return 30;
       return edge.data("kind") === "contains" ? 150 : 100;
     };
     // Imports are drawn but left out of the simulation: modules import each other, and those
     // springs pull every module to the centre, while calls already tie the code together.
     networkCy.elements().not("edge[kind = 'imports']").layout({
-      name: "cose", animate: false, randomize, fit: randomize, padding: 30, numIter: randomize ? 3000 : 1000,
+      name: "cose", animate: false, randomize: true, fit: true, padding: 30, numIter: 3000,
       nodeRepulsion: () => 45000, nodeOverlap: 30, gravity: 0.4, componentSpacing: 120,
       idealEdgeLength: springLength, edgeElasticity: springStiffness,
     }).run();
@@ -188,29 +188,38 @@
   }
 
   /**
-   * Redraw after folding or unfolding. Balls that stay keep their place, new ones start
-   * next to the ball they came out of, and the simulation continues from there (no reshuffle).
+   * Redraw after folding or unfolding, without moving anything already drawn: the
+   * simulation is not run again. Balls that come out of a class are placed on a small
+   * ring around it; balls folded back simply disappear.
    */
   function rebuild() {
     const oldPositions = new Map(networkCy.nodes().map((node) => [node.id(), { ...node.position() }]));
     networkCy.elements().remove();
     networkCy.add(buildElements(unfolded));
+    const newByOrigin = new Map();  // ball they came out of -> new balls
     networkCy.nodes().forEach((node) => {
       const kept = oldPositions.get(node.id());
       if (kept) { node.position(kept); return; }
-      let origin = null;  // the ball it was folded in
-      for (let current = shared.nodeByKey.get(node.id()).parent; current && !origin; current = shared.nodeByKey.get(current)?.parent) {
-        origin = oldPositions.get(current) || null;
-      }
-      const start = origin || { x: 0, y: 0 };
-      node.position({ x: start.x + (Math.random() - 0.5) * 60, y: start.y + (Math.random() - 0.5) * 60 });
+      let origin = shared.nodeByKey.get(node.id()).parent;
+      while (origin && !oldPositions.has(origin)) origin = shared.nodeByKey.get(origin)?.parent;
+      if (!newByOrigin.has(origin)) newByOrigin.set(origin, []);
+      newByOrigin.get(origin).push(node);
     });
+    for (const [origin, balls] of newByOrigin) placeOnRing(oldPositions.get(origin) || { x: 0, y: 0 }, balls);
     hoveredKey = null;
     if (chosenKey) chosenKey = visibleKey(chosenKey, unfolded);
     applyFilters();
-    runForceLayout(false);
     applyTrace();
     refreshHighlight();
+  }
+
+  /** Spread `balls` evenly on a circle around `centre`, wider when there are more of them. */
+  function placeOnRing(centre, balls) {
+    const radius = 40 + 6 * balls.length;
+    balls.forEach((ball, index) => {
+      const angle = (2 * Math.PI * index) / balls.length;
+      ball.position({ x: centre.x + radius * Math.cos(angle), y: centre.y + radius * Math.sin(angle) });
+    });
   }
 
   /** Double-click: unfold a folded class, fold an unfolded one, or fold the class a member belongs to. */
@@ -238,7 +247,7 @@
     networkCy.on("tap", (event) => { if (event.target === networkCy) choose(null); });
     networkCy.on("dbltap", "node", (event) => toggleFold(event.target.id()));
     applyFilters();
-    runForceLayout(true);
+    runForceLayout();
     applyTrace();
   }
 
