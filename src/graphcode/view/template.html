@@ -34,13 +34,20 @@
 <main>
   <div id="graph"></div>
   <div id="network" hidden></div>
+  <div id="panel-resizer" title="Drag to resize the panel"></div>
   <aside id="panel">
     <section id="trace-panel" hidden></section>
     <section id="details"><p class="hint">Click a node to see its code and neighbours. Double-click a box to expand or collapse it.</p></section>
     <section id="network-legend" hidden>
       <h3>Legend</h3>
       <ul id="network-groups"></ul>
-      <p class="note">Colour: top-level module or subpackage. Size: number of connections (calls, imports, inherits, containment). Faint lines: a module or class holding its members. Classes start folded (dashed ring): double-click to show or hide their methods. Hover or click a ball to light up its neighbours.</p>
+      <ul class="notes">
+        <li><b>Colour:</b> top-level module or subpackage.</li>
+        <li><b>Size:</b> number of connections (calls, imports, inherits, containment).</li>
+        <li><b>Faint lines:</b> a module or class holding its members.</li>
+        <li><b>Dashed ring:</b> a folded class; double-click to show or hide its methods.</li>
+        <li><b>Hover or click</b> a ball to light up its neighbours.</li>
+      </ul>
     </section>
     <section id="legend">
       <h3>Legend</h3>

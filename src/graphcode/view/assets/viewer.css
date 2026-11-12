@@ -39,7 +39,7 @@ button:hover { background: var(--line); }
 main { flex: 1; display: flex; min-height: 0; }
 #graph { flex: 1; min-width: 0; background: var(--surface); }
 #panel {
-  width: 420px; max-width: 45vw; overflow: auto; padding: 12px;
+  width: 420px; max-width: 75vw; flex-shrink: 0; overflow: auto; padding: 12px;
   border-left: 1px solid var(--line); background: var(--page);
 }
 #panel h2 { font-size: 14px; margin: 0 0 4px; word-break: break-all; }
@@ -108,3 +108,11 @@ body[data-mode="network"] button, body[data-mode="network"] #search, body[data-m
 }
 body[data-mode="network"] button:hover { background: #1b2130; }
 body[data-mode="network"] #mode-group button.active { background: var(--module); border-color: var(--module); color: #fff; }
+
+/* legend notes as a list (Network mode) */
+ul.notes { margin: 6px 0 0; padding-left: 16px; color: var(--muted); display: grid; gap: 3px; }
+
+/* the handle between the graph and the side panel (panel.js) */
+#panel-resizer { flex: 0 0 6px; cursor: col-resize; background: var(--line); opacity: 0.6; }
+#panel-resizer:hover, body.resizing #panel-resizer { opacity: 1; background: var(--muted); }
+body.resizing { cursor: col-resize; user-select: none; }
