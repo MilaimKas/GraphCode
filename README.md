@@ -48,8 +48,17 @@ uv run graphcode trace --all                 # every scenario
 
 ## Viewer
 
-- Packages, modules and classes are nested boxes. Double-click a box to open or close it.
-- Click a node to see its code, and what it uses and is used by.
+Two modes, switched with **Classic | Network** in the toolbar:
+
+- **Classic:** packages, modules and classes are nested boxes. Double-click a box to open or close it.
+- **Network** (`viewer.html#mode=network`): a dark network of balls.
+  - The colour shows the top-level module or subpackage. The size shows the number of connections.
+  - The layout follows the code's structure (imports, inheritance, containment). Calls are drawn on top, so calls between distant parts of the code stand out.
+  - Classes start folded (dashed ring). Double-click to show or hide their methods.
+
+In both modes:
+
+- Click a node to see its code, and what it uses and is used by. Drag the panel's left edge to resize it.
 - Search, filter edges by kind, and hide private functions.
 - **Trace** menu, or `viewer.html#trace=<name>`:
   - the call tree is shown in the side panel;
