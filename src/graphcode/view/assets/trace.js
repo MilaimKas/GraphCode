@@ -41,6 +41,8 @@
   const inGraph = (key) => nodeByKey.has(key);
 
   let callsByKey = new Map();  // key -> number of calls in the current trace
+  let shownTrace = null;  // the trace on screen (read by player.js through window.graphcode.shownTrace)
+  let litStep = cy.collection();  // what the player's current step lit, to unlight exactly that
 
   // --- the overlay ------------------------------------------------------------
 
@@ -49,12 +51,13 @@
     // Open everything first: edges can only be added between nodes that are drawn.
     expandCollapse.expandAll({ layoutBy: null });
     cy.remove(cy.edges("[confidence = 'runtime']"));
-    cy.elements().removeClass("ran untraced faded selected");
+    cy.elements().removeClass("ran untraced faded selected current");  // all drawn now, after expandAll
     document.getElementById("details").replaceChildren(
       element("p", "Click a node to see its code and neighbours. Double-click a box to expand or collapse it.", "hint"),
     );
     document.body.classList.toggle("tracing", trace !== null);
     callsByKey = new Map();
+    shownTrace = trace;
     if (trace === null) {
       document.getElementById("trace-panel").hidden = true;
       document.getElementById("trace-banner").hidden = true;
@@ -87,14 +90,30 @@
     document.dispatchEvent(new CustomEvent("graphcode:tracechange", { detail: trace }));
   }
 
-  /** Light the player's current step in Classic mode: the function, and the call that led to it. */
+  /** The drawn element standing for `key`: itself, or the closed box holding it (null if neither is drawn). */
+  function drawnElement(key) {
+    for (let current = key; current; current = nodeByKey.get(current)?.parent) {
+      const found = cy.getElementById(current);
+      if (found.nonempty()) return found;
+    }
+    return null;
+  }
+
+  /** Light the player's current step in Classic mode: the function (or its closed box), and the call that led to it. */
   stepHooks.push((key, callerKey) => {
-    cy.elements().removeClass("current");
+    // Unlight exactly what was lit: a box closed since then keeps its hidden members' classes.
+    litStep.removeClass("current");
+    litStep = cy.collection();
     if (key === null || document.body.dataset.mode === "network") return;
-    const node = cy.getElementById(key);
-    if (node.empty()) return;  // not in the graph, or inside a box closed by hand
-    node.addClass("current");
-    if (callerKey) cy.getElementById(`calls|${callerKey}|${key}`).union(cy.getElementById(`runtime|${callerKey}|${key}`)).addClass("current");
+    const node = drawnElement(key);
+    if (node === null) return;  // not in the graph
+    litStep = litStep.union(node);
+    if (callerKey) {
+      const staticCall = cy.getElementById(`calls|${callerKey}|${key}`);
+      const runtimeCall = cy.getElementById(`runtime|${callerKey}|${key}`);
+      litStep = litStep.union(staticCall).union(runtimeCall);
+    }
+    litStep.addClass("current");
     const shown = cy.extent();
     const { x, y } = node.position();
     if (x < shown.x1 || x > shown.x2 || y < shown.y1 || y > shown.y2) cy.animate({ center: { eles: node } }, { duration: 300 });
@@ -133,7 +152,7 @@
 
   // --- the panel and the banner -------------------------------------------------------
 
-  /** The call tree as an indented list; a click shows the step's node. */
+  /** The call tree as an indented list; a click on a row makes it the player's current step (player.js). */
   function showCallTree(trace, stepCalls) {
     const panel = document.getElementById("trace-panel");
     const header = trace.header;
@@ -194,6 +213,8 @@
     const text = calls ? `Ran ${calls} time${calls > 1 ? "s" : ""} in this trace.` : "Did not run in this trace.";
     panel.insertBefore(element("p", text, "trace-calls"), panel.children[2] || null);
   });
+
+  window.graphcode.shownTrace = () => shownTrace;
 
   // --- the menu -------------------------------------------------------------------------
 

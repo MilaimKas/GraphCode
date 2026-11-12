@@ -11,7 +11,7 @@
 (function () {
   "use strict";
 
-  const { data, element, showDetails, nodeByKey, stepHooks } = window.graphcode;
+  const { element, showDetails, nodeByKey, stepHooks, shownTrace } = window.graphcode;
   const STEP_DELAY_MS = 900;  // pause between two steps while playing
 
   let steps = [];
@@ -34,7 +34,11 @@
       row.classList.add("current-step");
       row.scrollIntoView({ block: "nearest" });
     }
-    if (nodeByKey.has(step.key)) showDetails(step.key);
+    if (nodeByKey.has(step.key)) {
+      showDetails(step.key);
+    } else {  // do not leave the previous function's code on screen
+      document.getElementById("details").replaceChildren(element("p", `${step.key} is not in the graph.`, "hint"));
+    }
     const name = step.key.includes(":") ? step.key.split(":")[1] : step.key;
     status.textContent = `Step ${current + 1} / ${steps.length} · ${name}`;
   }
@@ -93,11 +97,11 @@
 
   document.addEventListener("graphcode:tracechange", (event) => onTraceChange(event.detail));
   // A trace opened from the URL (#trace=...) was shown before this file loaded: pick it up now.
-  const menu = document.getElementById("trace-select");
-  if (menu.value !== "") onTraceChange(data.traces[Number(menu.value)]);
+  if (shownTrace()) onTraceChange(shownTrace());
   // viewer.html#trace=<name>&step=<n> opens at step n (counted from 1, as shown in the panel).
   const stepParameter = location.hash.slice(1).split("&").find((part) => part.startsWith("step="));
-  if (stepParameter && steps.length > 0) goTo(Number(stepParameter.slice("step=".length)) - 1);
+  const stepNumber = stepParameter ? Number(stepParameter.slice("step=".length)) : NaN;
+  if (Number.isInteger(stepNumber) && stepNumber >= 1 && steps.length > 0) goTo(stepNumber - 1);
 
   // A click on a call-tree row makes it the current step.
   document.getElementById("trace-panel").addEventListener("click", (event) => {
@@ -107,7 +111,9 @@
     goTo(Number(row.dataset.step));
   });
 
-  // After switching mode, light the current step again in the mode now shown.
+  // After switching mode, light the current step again in the mode now shown. This runs after
+  // network.js's own listener on the same buttons (registered first, as network.js loads first),
+  // so the mode is already switched.
   for (const id of ["mode-classic", "mode-network"]) {
     document.getElementById(id)?.addEventListener("click", () => { if (current >= 0) goTo(current); });
   }

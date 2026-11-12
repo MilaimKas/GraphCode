@@ -16,60 +16,12 @@
 
   const shared = window.graphcode;
   const { data, element, showDetails } = shared;
-  const { groupNames, groupColor, buildElements, visibleKey, foldedAncestors, isFolded } = shared.networkElements;
-  const RUNNING_COLOR = "#ffb300";
-  const RUNTIME_ONLY_COLOR = "#ff3d3d";  // red: a call that ran but is missing from the static graph
-  const CURRENT_STEP_COLOR = "#00e5ff";  // cyan: the player's current step
-
+  const { groupNames, groupColor, networkStyle, buildElements, visibleKey, foldedAncestors, isFolded } = shared.networkElements;
   let networkCy = null;  // created on first switch to Network mode
   let hoveredKey = null;
   let chosenKey = null;
   let currentStep = null;  // the player's current step: { key, callerKey }, or null
   const unfolded = new Set();  // classes and functions whose members are shown (double-click toggles)
-
-  /** Look of Network mode: shaded balls with a soft halo, thin translucent edges, then trace and highlight states. */
-  const networkStyle = [
-    {
-      selector: "node",
-      style: {
-        width: "data(size)", height: "data(size)", "background-image": "data(image)", "background-fit": "cover",
-        "background-opacity": 0, "border-width": 0, "underlay-color": "data(color)", "underlay-padding": 3,
-        "underlay-opacity": 0.12, "underlay-shape": "ellipse",
-        // Small, dim labels; a label appears only once it would be at least 9 px on screen (zoom in to read more).
-        label: "data(label)", color: "#9aa5b8", "font-size": 9, "text-valign": "bottom", "text-margin-y": 2,
-        "text-outline-color": "#07090f", "text-outline-width": 2, "text-opacity": 0.8, "min-zoomed-font-size": 9,
-      },
-    },
-    { selector: "node[?big]", style: { "min-zoomed-font-size": 0, "font-size": 10, color: "#c7cfdc" } },
-    // a folded class: a faint dashed ring says "double-click to see my methods"
-    { selector: "node[?folded]", style: { "border-width": 1.2, "border-style": "dashed", "border-color": "#c7cfdc", "border-opacity": 0.45 } },
-    {
-      selector: "edge",
-      style: {
-        width: 1, "curve-style": "straight", "line-color": "#8fa3c4", "target-arrow-color": "#8fa3c4",
-        "target-arrow-shape": "triangle", "arrow-scale": 0.55, opacity: 0.4,
-      },
-    },
-    { selector: "edge[kind = 'imports']", style: { "line-color": "#42a5f5", "target-arrow-color": "#42a5f5" } },
-    { selector: "edge[kind = 'inherits']", style: { "line-color": "#ce93d8", "target-arrow-color": "#ce93d8", width: 1.6, opacity: 0.5 } },
-    { selector: "edge[kind = 'contains']", style: { "line-color": "data(color)", "target-arrow-shape": "none", opacity: 0.2 } },
-    { selector: "edge[confidence = 'inferred']", style: { "line-style": "dashed" } },
-    { selector: "edge:loop", style: { "curve-style": "bezier" } },
-    // trace overlay
-    { selector: ".untraced", style: { opacity: 0.1 } },
-    { selector: "node.ran", style: { "underlay-color": RUNNING_COLOR, "underlay-opacity": 0.5, "underlay-padding": 7 } },
-    { selector: "edge.ran", style: { "line-color": RUNNING_COLOR, "target-arrow-color": RUNNING_COLOR, width: 2.2, opacity: 0.95 } },
-    { selector: "edge[confidence = 'runtime']", style: { "line-color": RUNTIME_ONLY_COLOR, "target-arrow-color": RUNTIME_ONLY_COLOR } },
-    // the player's current step
-    { selector: "node.current", style: { opacity: 1, "underlay-color": CURRENT_STEP_COLOR, "underlay-opacity": 0.7, "underlay-padding": 9 } },
-    { selector: "edge.current", style: { opacity: 1, width: 3.5, "line-color": CURRENT_STEP_COLOR, "target-arrow-color": CURRENT_STEP_COLOR } },
-    // hover and click
-    { selector: ".dim", style: { opacity: 0.07 } },
-    { selector: "node.lit", style: { opacity: 1, "underlay-opacity": 0.55, "underlay-padding": 8, "min-zoomed-font-size": 0, color: "#e6ebf5", "text-opacity": 1 } },
-    { selector: "edge.lit", style: { opacity: 0.95, width: 2 } },
-    { selector: "node.chosen", style: { "border-width": 2, "border-color": "#ffffff", "min-zoomed-font-size": 0 } },
-    { selector: ".hidden", style: { display: "none" } },
-  ];
 
   /** A number in [0, 1) computed from a text: the same text always gives the same number. */
   function stableFraction(text) {
@@ -338,7 +290,12 @@
   });
   shared.stepHooks.push((key, callerKey) => {
     currentStep = key === null ? null : { key, callerKey };
-    if (document.body.dataset.mode === "network") showCurrentStep(true);
+    if (document.body.dataset.mode !== "network") return;
+    if (key !== null && chosenKey) {  // the details panel now shows the step: drop the old chosen ball
+      chosenKey = null;
+      refreshHighlight();
+    }
+    showCurrentStep(true);
   });
   document.getElementById("mode-classic").addEventListener("click", () => setMode("classic", true));
   document.getElementById("mode-network").addEventListener("click", () => setMode("network", true));
