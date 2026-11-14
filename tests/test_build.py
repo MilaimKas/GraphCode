@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from collections import Counter
 from pathlib import Path
 
@@ -126,3 +127,49 @@ def test_build_graph_of_the_fixture() -> None:
         "sample.noise.gaussian:GaussianNoise",
         "sample.noise.base:Noise",
     )
+
+
+# --- reading a commit from git -----------------------------------------------------------
+
+
+def git(root: Path, *arguments: str) -> str:
+    """Run git in ``root`` with a fixed identity; return its output."""
+    command = ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"]
+    return subprocess.run([*command, *arguments], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+
+
+@pytest.fixture
+def repository(tmp_path: Path) -> Path:
+    """A git repository whose project lives in a subfolder; ``v1`` then a working-tree change."""
+    project = write_project(
+        tmp_path / "project",
+        {
+            "pyproject.toml": "[tool.graphcode]\npackage = 'pkg'\n",
+            "src/pkg/__init__.py": "",
+            "src/pkg/a.py": "def f():\n    return g()\n\ndef g():\n    return 1\n",
+        },
+    )
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-q", "-m", "v1")
+    git(tmp_path, "tag", "v1")
+    (project / "src/pkg/a.py").write_text("def f():\n    return 2\n", encoding="utf-8")
+    (project / "src/pkg/b.py").write_text("def h():\n    pass\n", encoding="utf-8")
+    return project
+
+
+def test_graph_of_a_commit_ignores_the_working_tree(repository: Path) -> None:
+    """``ref='v1'`` reads the committed files, even from a project in a subfolder of the repository."""
+    config = load_config(repository)
+    committed = build_graph(config, ref="v1")
+    current = build_graph(config)
+    assert {str(node.key) for node in committed.nodes} == {"pkg", "pkg.a", "pkg.a:f", "pkg.a:g"}
+    assert [(str(edge.source), str(edge.target)) for edge in committed.edges] == [("pkg.a:f", "pkg.a:g")]
+    assert committed.header.commit == git(repository, "rev-parse", "v1") and committed.header.dirty is False
+    assert "pkg.b:h" in {str(node.key) for node in current.nodes} and current.header.dirty
+
+
+def test_unknown_ref(repository: Path) -> None:
+    """A ref git does not know is a SourceError naming it."""
+    with pytest.raises(SourceError, match="unknown git ref 'nope'"):
+        build_graph(load_config(repository), ref="nope")
