@@ -1,4 +1,4 @@
-"""Command line: ``graphcode build-graph``, ``graphcode view`` and ``graphcode trace``.
+"""Command line: ``graphcode build-graph``, ``view``, ``trace`` and ``diff``.
 
 All read ``[tool.graphcode]`` from the project's ``pyproject.toml`` and
 write into ``<project>/.graphcode/``. Examples of ``trace``::
@@ -7,6 +7,11 @@ write into ``<project>/.graphcode/``. Examples of ``trace``::
     graphcode trace datagenerator.cli:main -- --rows 10
     graphcode trace @sample-small
     graphcode trace --all
+
+and of ``diff``::
+
+    graphcode diff main              # main vs the working tree
+    graphcode diff main..feature-x   # any two refs
 """
 
 from __future__ import annotations
@@ -21,6 +26,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from graphcode.config import ConfigError, GraphCodeConfig, load_config
+from graphcode.diff.compare import IncomparableGraphsError, compare_graphs
+from graphcode.diff.load import graph_at, parse_range
+from graphcode.diff.report import markdown_report
 from graphcode.graph.build import build_graph
 from graphcode.graph.definitions import ExtractionError
 from graphcode.graph.serialization import write_graph
@@ -55,9 +63,11 @@ def main(arguments: Sequence[str] | None = None) -> int:
             _build(config)
         elif options.command == "view":
             _view(config, rebuild=not options.no_build, open_browser=options.open)
+        elif options.command == "diff":
+            _diff(config, options.range, parser)
         else:
             return _trace(config, _trace_targets(config, options, target_argv, parser), rebuild=not options.no_build)
-    except (ConfigError, SourceError, ExtractionError, TargetError) as error:
+    except (ConfigError, SourceError, ExtractionError, TargetError, IncomparableGraphsError) as error:
         print(f"graphcode: {error}", file=sys.stderr)
         return 1
     return 0
@@ -71,6 +81,7 @@ def _parser() -> argparse.ArgumentParser:
         ("build-graph", f"extract the structure graph into .graphcode/{GRAPH_FILE}"),
         ("view", f"write .graphcode/{VIEWER_FILE} (rebuilding the graph first)"),
         ("trace", "record which package functions a call runs, into .graphcode/traces/"),
+        ("diff", "show how the graph changes between two versions (refs read from git)"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--project", type=Path, default=Path("."), help="project folder (default: current)")
@@ -85,6 +96,9 @@ def _parser() -> argparse.ArgumentParser:
     trace.add_argument("--all", action="store_true", help="trace every scenario of pyproject.toml")
     trace.add_argument("--no-build", action="store_true", help=f"use the existing {GRAPH_FILE}")
     trace.epilog = "Words after '--' are passed to the traced function as its command line (sys.argv)."
+    diff = commands.choices["diff"]
+    diff.add_argument("range", help="<ref> (compared with the working tree) or <ref>..<ref>, e.g. main..feature-x")
+    diff.add_argument("--format", choices=["md"], default="md", help="output: a Markdown summary on stdout")
     return parser
 
 
@@ -157,6 +171,17 @@ def _trace(config: GraphCodeConfig, targets: list[TraceTarget], rebuild: bool) -
         _build(config)
     exit_codes = [trace_in_child(config.project_root, target) for target in targets]
     return max(exit_codes)
+
+
+def _diff(config: GraphCodeConfig, range_text: str, parser: argparse.ArgumentParser) -> None:
+    """Print how the graph changes from the first ref to the second (or the working tree)."""
+    try:
+        base_ref, head_ref = parse_range(range_text)
+    except ValueError as error:
+        parser.error(str(error))
+    _prepare_output_folder(config)  # the commit graph cache lives in .graphcode/cache/
+    diff = compare_graphs(graph_at(config, base_ref), graph_at(config, head_ref))
+    print(markdown_report(diff, base_ref, head_ref), end="")
 
 
 def _open_in_browser(page: Path) -> None:

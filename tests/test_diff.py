@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
+from graphcode.cli import main as cli_main
+from graphcode.config import load_config
 from graphcode.diff.compare import IncomparableGraphsError, NodeChange, compare_graphs
+from graphcode.diff.load import graph_at, parse_range
 from graphcode.graph.build import _extract
 from graphcode.graph.model import ArchitectureGraph, GraphHeader, Node
+from graphcode.graph.serialization import read_graph, write_graph
 
 
 def graph_of(files: dict[str, str]) -> ArchitectureGraph:
@@ -126,3 +132,72 @@ def test_a_cycle_that_shrank_is_not_new() -> None:
     smaller = {**files, "pkg/c.py": ""}
     assert compare_graphs(graph_of(files), graph_of(smaller)).new_cycles == ()
     assert compare_graphs(graph_of(smaller), graph_of(files)).new_cycles == (("pkg.a", "pkg.b", "pkg.c"),)
+
+
+# --- loading versions, the report and the command --------------------------------------
+
+
+def git(root: Path, *arguments: str) -> None:
+    """Run git in ``root`` with a fixed identity."""
+    command = ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"]
+    subprocess.run([*command, *arguments], cwd=root, capture_output=True, check=True)
+
+
+@pytest.fixture
+def repository(tmp_path: Path) -> Path:
+    """A project in git: tag v1, then commit v2 (util.clean modified, util.extra added)."""
+    files = {"pyproject.toml": "[tool.graphcode]\npackage = 'pkg'\n", **BASE}
+    for relative, text in files.items():
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text(text, encoding="utf-8")
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-q", "-m", "v1")
+    git(tmp_path, "tag", "v1")
+    (tmp_path / "pkg/util.py").write_text("def clean(x):\n    return x.strip().lower()\n\ndef extra():\n    pass\n")
+    git(tmp_path, "commit", "-q", "-am", "v2")
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [("main", ("main", None)), ("main..feature", ("main", "feature")), ("a1b2c3d..HEAD", ("a1b2c3d", "HEAD"))],
+)
+def test_parse_range(text: str, expected: tuple[str, str | None]) -> None:
+    """One ref compares with the working tree; two refs with each other."""
+    assert parse_range(text) == expected
+
+
+def test_parse_range_rejects_an_empty_side() -> None:
+    """``main..`` is a mistake, not the working tree."""
+    with pytest.raises(ValueError, match="<ref>..<ref>"):
+        parse_range("main..")
+
+
+def test_commit_graphs_are_cached_and_rebuilt_when_stale(repository: Path) -> None:
+    """A commit's graph is written once and reused; a cache with another fingerprint scheme is rebuilt."""
+    config = load_config(repository)
+    first = graph_at(config, "v1")
+    cache_file = repository / ".graphcode" / "cache" / f"{first.header.commit}.json"
+    assert cache_file.is_file()
+    assert graph_at(config, "v1") == first
+    stale = read_graph(cache_file)
+    write_graph(replace(stale, header=replace(stale.header, fingerprint_scheme="1-py3.0")), cache_file)
+    assert graph_at(config, "v1").header.fingerprint_scheme == first.header.fingerprint_scheme
+
+
+def test_cli_diff_prints_the_markdown_summary(repository: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """``graphcode diff v1..HEAD`` lists what v2 changed; v1 against itself has no change."""
+    assert cli_main(["diff", "--project", str(repository), "v1..HEAD"]) == 0
+    report = capsys.readouterr().out
+    assert report.startswith("## graphcode diff: v1 (")
+    assert "1 added · 0 removed · 1 modified" in report
+    assert "- `pkg.util:extra` (function)" in report and "- `pkg.util:clean` (function)" in report
+    assert cli_main(["diff", "--project", str(repository), "v1..v1"]) == 0
+    assert "No structural change" in capsys.readouterr().out
+
+
+def test_cli_diff_unknown_ref(repository: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """An unknown ref is a one-line error and exit code 1."""
+    assert cli_main(["diff", "--project", str(repository), "nope"]) == 1
+    assert "unknown git ref 'nope'" in capsys.readouterr().err
