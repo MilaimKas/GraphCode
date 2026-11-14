@@ -6,9 +6,9 @@ from dataclasses import replace
 
 import pytest
 
-from graphcode.diff.compare import IncomparableGraphsError, compare_graphs
+from graphcode.diff.compare import IncomparableGraphsError, NodeChange, compare_graphs
 from graphcode.graph.build import _extract
-from graphcode.graph.model import ArchitectureGraph, GraphHeader
+from graphcode.graph.model import ArchitectureGraph, GraphHeader, Node
 
 
 def graph_of(files: dict[str, str]) -> ArchitectureGraph:
@@ -34,7 +34,7 @@ def changed(**files: str) -> dict[str, str]:
     return {**BASE, **{name.replace("_", "/", 1) + ".py": text for name, text in files.items()}}
 
 
-def keys(nodes_or_changes: tuple) -> list[str]:
+def keys(nodes_or_changes: tuple[Node, ...] | tuple[NodeChange, ...]) -> list[str]:
     """Readable keys of nodes, or "before -> after" for node changes."""
     return [
         f"{item.before.key} -> {item.after.key}" if hasattr(item, "before") else str(item.key)
@@ -97,3 +97,32 @@ def test_graphs_with_different_fingerprint_schemes_are_refused() -> None:
     other = replace(base, header=replace(base.header, fingerprint_scheme="1-py3.99"))
     with pytest.raises(IncomparableGraphsError, match="rebuild both graphs"):
         compare_graphs(base, other)
+
+
+def test_unrelated_plain_classes_are_not_a_move() -> None:
+    """Two classes with only methods have an empty own body: different method names keep them apart."""
+    base = {**BASE, "pkg/cache.py": "class Cache:\n    def get(self):\n        return 1\n"}
+    head = {**BASE, "pkg/export.py": "class Exporter:\n    def write(self):\n        return 2\n"}
+    diff = compare_graphs(graph_of(base), graph_of(head))
+    assert diff.moved == ()
+    assert keys(diff.removed) == ["pkg.cache", "pkg.cache:Cache", "pkg.cache:Cache.get"]
+
+
+def test_a_class_moved_with_its_methods() -> None:
+    """A class moved to another module is one move, and so is each of its (unique) methods."""
+    cls = "class Cache:\n    def get(self):\n        return 1\n"
+    diff = compare_graphs(graph_of({**BASE, "pkg/cache.py": cls}), graph_of({**BASE, "pkg/store.py": cls}))
+    assert keys(diff.moved) == ["pkg.cache:Cache -> pkg.store:Cache", "pkg.cache:Cache.get -> pkg.store:Cache.get"]
+
+
+def test_a_cycle_that_shrank_is_not_new() -> None:
+    """a -> b -> c -> a becomes a <-> b: part of the old cycle, so not reported."""
+    files = {
+        "pkg/__init__.py": "",
+        "pkg/a.py": "import pkg.b\n",
+        "pkg/b.py": "import pkg.a\nimport pkg.c\n",
+        "pkg/c.py": "import pkg.a\n",
+    }
+    smaller = {**files, "pkg/c.py": ""}
+    assert compare_graphs(graph_of(files), graph_of(smaller)).new_cycles == ()
+    assert compare_graphs(graph_of(smaller), graph_of(files)).new_cycles == (("pkg.a", "pkg.b", "pkg.c"),)
