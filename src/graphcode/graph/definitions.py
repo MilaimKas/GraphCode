@@ -12,7 +12,9 @@ This pass produces the nodes of the structure graph, without edges. Rules:
 - a definition's span starts at its first decorator;
 - a key defined several times (property setter, ``@overload``, conditional
   definitions) becomes one node with several spans; the last kind wins, as
-  the last definition is the one that exists at run time.
+  the last definition is the one that exists at run time;
+- each node gets a structural fingerprint (see ``fingerprint.py``), which the
+  PR diff compares to tell real changes from formatting.
 
 The package is assumed to be well structured: pathological code (``global``
 definitions inside functions, folders without ``__init__.py``) gets a
@@ -27,6 +29,11 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
+from graphcode.graph.fingerprint import (
+    combined_fingerprint,
+    definition_fingerprint,
+    module_fingerprint,
+)
 from graphcode.graph.model import LineSpan, Node, NodeKind
 from graphcode.keys import InvalidKeyError, NodeKey, module_name_from_path
 from graphcode.sources import SourceReader
@@ -46,6 +53,7 @@ class _NodeDraft:
     file: str
     parent: NodeKey | None
     spans: list[LineSpan] = field(default_factory=list)
+    fingerprints: list[str] = field(default_factory=list)  # one per definition of the key
 
 
 def extract_definitions(
@@ -101,10 +109,14 @@ def extract_definitions(
             tree = ast.parse(text, filename=path)
         except SyntaxError as error:
             raise ExtractionError(f"cannot parse {path}: {error}") from error
+        drafts[module_key].fingerprints.append(module_fingerprint(tree))
         _collect_scope(tree.body, module_key, NodeKind.MODULE, path, drafts)
 
     return tuple(
-        Node(key=key, kind=draft.kind, file=draft.file, spans=tuple(draft.spans), parent=draft.parent)
+        Node(
+            key=key, kind=draft.kind, file=draft.file, spans=tuple(draft.spans), parent=draft.parent,
+            fingerprint=combined_fingerprint(draft.fingerprints),
+        )
         for key, draft in sorted(drafts.items())
     )
 
@@ -176,6 +188,7 @@ def _collect_scope(
         draft = drafts.setdefault(key, _NodeDraft(kind=kind, file=path, parent=scope_key))
         draft.kind = kind  # a redefinition replaces the earlier one: last kind wins
         draft.spans.append(span)
+        draft.fingerprints.append(definition_fingerprint(statement))
         _collect_scope(statement.body, key, kind, path, drafts)
 
 

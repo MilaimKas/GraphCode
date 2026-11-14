@@ -170,7 +170,7 @@ def _apply(edit: Callable[[dict[str, Any]], object]) -> dict[str, Any]:
 @pytest.mark.parametrize(
     "edit",
     [
-        lambda data: data["header"].update(schema_version=2),
+        lambda data: data["header"].update(schema_version=99),
         lambda data: data["nodes"][0].update(kind="lambda"),
         lambda data: data["nodes"][0].pop("spans"),
         lambda data: data["nodes"][0].update(spans=[[5, 2]]),
@@ -201,7 +201,7 @@ def test_invalid_content_rejected(edit: Callable[[dict[str, Any]], object]) -> N
 def test_schema_version_message_says_rebuild() -> None:
     """A version mismatch tells the user what to do."""
     with pytest.raises(GraphFormatError, match="rebuild the graph"):
-        graph_from_dict(_apply(lambda data: data["header"].update(schema_version=2)))
+        graph_from_dict(_apply(lambda data: data["header"].update(schema_version=99)))
 
 
 @pytest.mark.parametrize("content", [b"\xff", b"{not json"], ids=["not utf-8", "not json"])

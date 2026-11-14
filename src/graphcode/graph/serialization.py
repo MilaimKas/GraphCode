@@ -4,13 +4,14 @@ Keys are :class:`NodeKey` objects in Python and plain strings in the file.
 Reading validates everything, so a malformed file fails here with one error
 type, :class:`GraphFormatError`, never later in the viewer or the diff.
 
-File layout (schema version 1)::
+File layout (schema version 2)::
 
     {
-      "header": {"schema_version": 1, "graphcode_version": "0.1.0",
+      "header": {"schema_version": 2, "graphcode_version": "0.1.0",
                  "commit": "a1b2c3d", "dirty": false},
       "nodes": [{"key": "pkg.mod:Class", "kind": "class", "file": "pkg/mod.py",
-                 "spans": [[31, 210]], "parent": "pkg.mod"}],
+                 "spans": [[31, 210]], "parent": "pkg.mod",
+                 "fingerprint": "3f9a0c1d2e4b5a67"}],
       "edges": [{"source": "pkg.mod:f", "target": "pkg.mod:Class", "kind": "calls",
                  "confidence": "exact", "lines": [12, 15]}]
     }
@@ -63,6 +64,7 @@ def graph_to_dict(graph: ArchitectureGraph) -> dict[str, Any]:
                 "file": node.file,
                 "spans": [[span.start, span.end] for span in node.spans],
                 "parent": None if node.parent is None else str(node.parent),
+                "fingerprint": node.fingerprint,
             }
             for node in nodes
         ],
@@ -108,6 +110,7 @@ def graph_from_dict(data: dict[str, Any]) -> ArchitectureGraph:
                 file=node_data["file"],
                 spans=tuple(LineSpan(start, end) for start, end in node_data["spans"]),
                 parent=None if node_data["parent"] is None else NodeKey.from_string(node_data["parent"]),
+                fingerprint=node_data["fingerprint"],
             )
             for node_data in data["nodes"]
         )

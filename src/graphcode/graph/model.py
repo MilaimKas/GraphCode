@@ -15,7 +15,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from graphcode.keys import NodeKey
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: nodes have a structural fingerprint
 
 
 class GraphFormatError(ValueError):
@@ -90,6 +90,10 @@ class Node:
     parent : NodeKey or None
         Key of the containing node; None for a root (the analysed package,
         or a module outside any extracted package).
+    fingerprint : str
+        Hash of the definition's structure (see ``fingerprint.py``): equal
+        fingerprints mean no change but formatting, comments or docstring.
+        Empty when unknown (nodes built by hand in tests).
     """
 
     key: NodeKey
@@ -97,6 +101,7 @@ class Node:
     file: str
     spans: tuple[LineSpan, ...]
     parent: NodeKey | None
+    fingerprint: str = ""
 
     def __post_init__(self) -> None:
         """Require at least one span and store spans sorted, without repeats."""
