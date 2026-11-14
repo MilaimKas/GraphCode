@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
 
+from graphcode.graph.fingerprint import fingerprint_scheme
 from graphcode.keys import NodeKey
 
 SCHEMA_VERSION = 2  # 2: nodes have a structural fingerprint
@@ -166,17 +167,21 @@ class GraphHeader:
         Git commit of the analysed code; None outside a git repository.
     dirty : bool
         True when the working tree had uncommitted changes.
+    fingerprint_scheme : str
+        How the nodes' fingerprints were computed (rule version and Python
+        version, e.g. ``"1-py3.12"``); graphs are comparable only when equal.
     """
 
     schema_version: int
     graphcode_version: str
     commit: str | None
     dirty: bool
+    fingerprint_scheme: str
 
     @classmethod
     def for_current_build(cls, commit: str | None, dirty: bool) -> GraphHeader:
-        """Create a header for a graph built now by this graphcode version."""
-        return cls(SCHEMA_VERSION, installed_graphcode_version(), commit, dirty)
+        """Create a header for a graph built now by this graphcode version and Python."""
+        return cls(SCHEMA_VERSION, installed_graphcode_version(), commit, dirty, fingerprint_scheme())
 
 
 @dataclass(frozen=True)

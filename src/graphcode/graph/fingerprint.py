@@ -26,11 +26,24 @@ from __future__ import annotations
 import ast
 import copy
 import hashlib
+import sys
 from collections.abc import Sequence
 
-ScopeStatement = ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+DefinitionStatement = ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
 
 _FINGERPRINT_BYTES = 8  # 16 hexadecimal characters: ample for one package's definitions
+FINGERPRINT_RULE_VERSION = 1  # raise when what goes into a fingerprint changes
+
+
+def fingerprint_scheme() -> str:
+    """Tag of how fingerprints are computed now, e.g. ``"1-py3.12"``.
+
+    Python's ``ast.dump`` text changes between versions (3.12 added type
+    parameters, 3.13 stopped printing empty fields), so the same code gets
+    different fingerprints under two Python versions. Only fingerprints with
+    the same scheme can be compared.
+    """
+    return f"{FINGERPRINT_RULE_VERSION}-py{sys.version_info.major}.{sys.version_info.minor}"
 
 
 class _WithoutNestedDefinitions(ast.NodeTransformer):
@@ -69,7 +82,7 @@ def _dump(tree: ast.AST) -> str:
     return ast.dump(tree, include_attributes=False)
 
 
-def definition_fingerprint(statement: ScopeStatement) -> str:
+def definition_fingerprint(statement: DefinitionStatement) -> str:
     """Fingerprint of one ``class`` or ``def`` statement (the original is not modified)."""
     own = copy.deepcopy(statement)
     own.name = ""

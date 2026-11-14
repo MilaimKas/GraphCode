@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 from graphcode.graph.fingerprint import (
+    DefinitionStatement,
     combined_fingerprint,
     definition_fingerprint,
     module_fingerprint,
@@ -38,7 +39,7 @@ from graphcode.graph.model import LineSpan, Node, NodeKind
 from graphcode.keys import InvalidKeyError, NodeKey, module_name_from_path
 from graphcode.sources import SourceReader
 
-DefinitionStatement = ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+__all__ = ["DefinitionStatement", "ExtractionError", "definitions_of_scope", "extract_definitions"]
 
 
 class ExtractionError(Exception):

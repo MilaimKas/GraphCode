@@ -8,7 +8,7 @@ File layout (schema version 2)::
 
     {
       "header": {"schema_version": 2, "graphcode_version": "0.1.0",
-                 "commit": "a1b2c3d", "dirty": false},
+                 "commit": "a1b2c3d", "dirty": false, "fingerprint_scheme": "1-py3.12"},
       "nodes": [{"key": "pkg.mod:Class", "kind": "class", "file": "pkg/mod.py",
                  "spans": [[31, 210]], "parent": "pkg.mod",
                  "fingerprint": "3f9a0c1d2e4b5a67"}],
@@ -56,6 +56,7 @@ def graph_to_dict(graph: ArchitectureGraph) -> dict[str, Any]:
             "graphcode_version": header.graphcode_version,
             "commit": header.commit,
             "dirty": header.dirty,
+            "fingerprint_scheme": header.fingerprint_scheme,
         },
         "nodes": [
             {
@@ -102,6 +103,7 @@ def graph_from_dict(data: dict[str, Any]) -> ArchitectureGraph:
             graphcode_version=header_data["graphcode_version"],
             commit=header_data["commit"],
             dirty=header_data["dirty"],
+            fingerprint_scheme=header_data["fingerprint_scheme"],
         )
         nodes = tuple(
             Node(

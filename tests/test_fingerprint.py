@@ -79,3 +79,14 @@ def test_duplicate_definitions_are_combined() -> None:
     """A property getter and setter make one node; changing either changes its fingerprint."""
     source = "class C:\n    @property\n    def v(self):\n        return 1\n    @v.setter\n    def v(self, x):\n        pass\n"
     assert fingerprints(source)["C.v"] != fingerprints(source.replace("pass", "self.x = x"))["C.v"]
+
+
+def test_scheme_names_rule_and_python_version() -> None:
+    """Graphs record how fingerprints were made, e.g. "1-py3.12": only equal schemes compare."""
+    import sys
+
+    from graphcode.graph.fingerprint import FINGERPRINT_RULE_VERSION, fingerprint_scheme
+    from graphcode.graph.model import GraphHeader
+
+    expected = f"{FINGERPRINT_RULE_VERSION}-py{sys.version_info.major}.{sys.version_info.minor}"
+    assert fingerprint_scheme() == expected == GraphHeader.for_current_build(None, False).fingerprint_scheme

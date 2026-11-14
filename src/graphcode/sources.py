@@ -8,6 +8,7 @@ untouched. Both sources share one rule for which files form the package.
 
 from __future__ import annotations
 
+import functools
 import subprocess
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
@@ -62,8 +63,9 @@ def find_package_files_at(project_root: Path, commit: str, package: str, exclude
         If the commit has no such package.
     """
     # Run in the project folder: paths come out relative to it, even inside a larger repository.
-    listing = _git(project_root, "ls-tree", "-r", "--name-only", commit, "--", f"src/{package}", package)
-    return _package_layout(listing.splitlines(), package, exclude, f"commit {commit[:7]}")
+    # -z: names separated by NUL and never quoted (git quotes non-ASCII names otherwise).
+    listing = _git(project_root, "ls-tree", "-r", "-z", "--name-only", commit, "--", f"src/{package}", package)
+    return _package_layout([name for name in listing.split("\0") if name], package, exclude, f"commit {commit[:7]}")
 
 
 def _package_layout(candidates: Collection[str], package: str, exclude: Sequence[str], where: str) -> PackageLayout:
@@ -99,15 +101,28 @@ def working_tree_reader(project_root: Path) -> SourceReader:
 
 
 def commit_reader(project_root: Path, commit: str) -> SourceReader:
-    """Return a reader of files as they are in a git commit, relative to ``project_root``."""
+    """Return a reader of files as they are in a git commit, relative to ``project_root``.
 
+    Each file is fetched from git once and remembered: the extraction passes
+    read every file several times, and each ``git`` call costs a process.
+
+    Raises
+    ------
+    SourceError
+        From the reader, if a file cannot be read or is not UTF-8.
+    """
+
+    @functools.cache
     def read_source(relative_path: str) -> str:
         """Return the UTF-8 text of one project file at the commit."""
-        # "./" makes the path relative to the project folder, not to the repository root.
-        completed = subprocess.run(
-            ["git", "show", f"{commit}:./{relative_path}"], cwd=project_root, capture_output=True, check=True
-        )
-        return completed.stdout.decode("utf-8")
+        try:
+            # "./" makes the path relative to the project folder, not to the repository root.
+            completed = subprocess.run(
+                ["git", "show", f"{commit}:./{relative_path}"], cwd=project_root, capture_output=True, check=True
+            )
+            return completed.stdout.decode("utf-8")
+        except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
+            raise SourceError(f"cannot read {relative_path} at commit {commit[:7]}: {error}") from error
 
     return read_source
 
