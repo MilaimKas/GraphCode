@@ -43,7 +43,7 @@ def markdown_report(diff: GraphDiff, base_name: str, head_name: str | None) -> s
         title,
         counts,
         _section("New dependencies between modules", [f"`{source}` → `{target}`" for source, target in diff.new_dependencies]),
-        _section("New import cycles", [" ↔ ".join(f"`{module}`" for module in cycle) for cycle in diff.new_cycles]),
+        _section("New import cycles", [", ".join(f"`{module}`" for module in cycle) + " import each other" for cycle in diff.new_cycles]),
         _section("Added", [f"`{node.key}` ({node.kind.value})" for node in diff.added]),
         _section("Removed", [f"`{node.key}` ({node.kind.value})" for node in diff.removed]),
         _section("Modified", [f"`{change.after.key}` ({change.after.kind.value})" for change in diff.modified]),

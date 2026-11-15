@@ -11,10 +11,10 @@ import pytest
 from graphcode.cli import main as cli_main
 from graphcode.config import load_config
 from graphcode.diff.compare import IncomparableGraphsError, NodeChange, compare_graphs
-from graphcode.diff.load import graph_at, parse_range
+from graphcode.diff.load import VersionRange, base_ref, graph_at, parse_range
 from graphcode.graph.build import _extract
 from graphcode.graph.model import ArchitectureGraph, GraphHeader, Node
-from graphcode.graph.serialization import read_graph, write_graph
+from graphcode.graph.serialization import write_graph
 
 
 def graph_of(files: dict[str, str]) -> ArchitectureGraph:
@@ -150,7 +150,7 @@ def repository(tmp_path: Path) -> Path:
     for relative, text in files.items():
         (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / relative).write_text(text, encoding="utf-8")
-    git(tmp_path, "init", "-q")
+    git(tmp_path, "init", "-q", "-b", "main")
     git(tmp_path, "add", ".")
     git(tmp_path, "commit", "-q", "-m", "v1")
     git(tmp_path, "tag", "v1")
@@ -161,29 +161,57 @@ def repository(tmp_path: Path) -> Path:
 
 @pytest.mark.parametrize(
     ("text", "expected"),
-    [("main", ("main", None)), ("main..feature", ("main", "feature")), ("a1b2c3d..HEAD", ("a1b2c3d", "HEAD"))],
+    [
+        ("main", VersionRange("main", None)),
+        ("main..feature", VersionRange("main", "feature")),
+        ("main...feature", VersionRange("main", "feature", from_branch_point=True)),
+    ],
 )
-def test_parse_range(text: str, expected: tuple[str, str | None]) -> None:
-    """One ref compares with the working tree; two refs with each other."""
+def test_parse_range(text: str, expected: VersionRange) -> None:
+    """As for git diff: one ref vs the working tree, .. the two last commits, ... from the branch point."""
     assert parse_range(text) == expected
 
 
-def test_parse_range_rejects_an_empty_side() -> None:
-    """``main..`` is a mistake, not the working tree."""
-    with pytest.raises(ValueError, match="<ref>..<ref>"):
-        parse_range("main..")
+@pytest.mark.parametrize("text", ["main..", "..main", "main..."])
+def test_parse_range_rejects_an_empty_side(text: str) -> None:
+    """An empty side is a mistake, not the working tree."""
+    with pytest.raises(ValueError, match="<ref>...<ref>"):
+        parse_range(text)
 
 
-def test_commit_graphs_are_cached_and_rebuilt_when_stale(repository: Path) -> None:
-    """A commit's graph is written once and reused; a cache with another fingerprint scheme is rebuilt."""
+def test_three_dots_start_where_the_branch_left(repository: Path) -> None:
+    """main gains a commit after feature branched: main...feature ignores it, main..feature shows it reversed."""
+    git(repository, "checkout", "-q", "-b", "feature", "v1")
+    (repository / "pkg/core.py").write_text(BASE["pkg/core.py"] + "\ndef new_feature():\n    return 3\n")
+    git(repository, "commit", "-q", "-am", "feature work")
+    config = load_config(repository)
+    branch_point = compare_graphs(graph_at(config, base_ref(config, parse_range("main...feature"))), graph_at(config, "feature"))
+    tips = compare_graphs(graph_at(config, "main"), graph_at(config, "feature"))
+    assert keys(branch_point.added) == ["pkg.core:new_feature"] and branch_point.removed == ()
+    assert keys(tips.removed) == ["pkg.util:extra"]  # what main gained, seen as "removed"
+
+
+def test_commit_graphs_are_cached(repository: Path) -> None:
+    """A commit's graph is read back from the cache; a damaged cache file is rebuilt."""
     config = load_config(repository)
     first = graph_at(config, "v1")
-    cache_file = repository / ".graphcode" / "cache" / f"{first.header.commit}.json"
-    assert cache_file.is_file()
-    assert graph_at(config, "v1") == first
-    stale = read_graph(cache_file)
-    write_graph(replace(stale, header=replace(stale.header, fingerprint_scheme="1-py3.0")), cache_file)
-    assert graph_at(config, "v1").header.fingerprint_scheme == first.header.fingerprint_scheme
+    (cache_file,) = (repository / ".graphcode" / "cache").glob(f"{first.header.commit}-*.json")
+    trimmed = replace(first, nodes=first.nodes, edges=())  # a recognisable variant, still valid
+    write_graph(trimmed, cache_file)
+    assert graph_at(config, "v1").edges == ()  # read from the cache, not rebuilt
+    assert graph_at(config, "v1", use_cache=False).edges == first.edges  # --no-cache rebuilds
+    cache_file.write_text("{", encoding="utf-8")
+    assert graph_at(config, "v1") == first  # damaged: rebuilt
+
+
+def test_cache_depends_on_settings(repository: Path) -> None:
+    """Changing exclude (or graphcode, or Python) uses another cache file, never a stale graph."""
+    config = load_config(repository)
+    graph_at(config, "v1")
+    excluding = replace(config, exclude=("pkg/util.py",))
+    assert "pkg.util" not in {str(node.key) for node in graph_at(excluding, "v1").nodes}
+    assert len(list((repository / ".graphcode" / "cache").glob("*.json"))) == 2
+
 
 
 def test_cli_diff_prints_the_markdown_summary(repository: Path, capsys: pytest.CaptureFixture[str]) -> None:

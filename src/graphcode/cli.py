@@ -11,7 +11,8 @@ write into ``<project>/.graphcode/``. Examples of ``trace``::
 and of ``diff``::
 
     graphcode diff main              # main vs the working tree
-    graphcode diff main..feature-x   # any two refs
+    graphcode diff main..feature-x   # the last commits of both
+    graphcode diff main...feature-x  # what feature-x changed since it left main (as a PR)
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from pathlib import Path
 
 from graphcode.config import ConfigError, GraphCodeConfig, load_config
 from graphcode.diff.compare import IncomparableGraphsError, compare_graphs
-from graphcode.diff.load import graph_at, parse_range
+from graphcode.diff.load import base_ref, graph_at, parse_range
 from graphcode.diff.report import markdown_report
 from graphcode.graph.build import build_graph
 from graphcode.graph.definitions import ExtractionError
@@ -64,7 +65,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
         elif options.command == "view":
             _view(config, rebuild=not options.no_build, open_browser=options.open)
         elif options.command == "diff":
-            _diff(config, options.range, parser)
+            _diff(config, options.range, not options.no_cache, parser)
         else:
             return _trace(config, _trace_targets(config, options, target_argv, parser), rebuild=not options.no_build)
     except (ConfigError, SourceError, ExtractionError, TargetError, IncomparableGraphsError) as error:
@@ -97,7 +98,10 @@ def _parser() -> argparse.ArgumentParser:
     trace.add_argument("--no-build", action="store_true", help=f"use the existing {GRAPH_FILE}")
     trace.epilog = "Words after '--' are passed to the traced function as its command line (sys.argv)."
     diff = commands.choices["diff"]
-    diff.add_argument("range", help="<ref> (compared with the working tree) or <ref>..<ref>, e.g. main..feature-x")
+    diff.add_argument(
+        "range", help="<ref> (vs the working tree), <ref>..<ref> (both last commits) or <ref>...<ref> (since the branch point)"
+    )
+    diff.add_argument("--no-cache", action="store_true", help="rebuild commit graphs instead of reusing .graphcode/cache/")
     diff.add_argument("--format", choices=["md"], default="md", help="output: a Markdown summary on stdout")
     return parser
 
@@ -173,15 +177,17 @@ def _trace(config: GraphCodeConfig, targets: list[TraceTarget], rebuild: bool) -
     return max(exit_codes)
 
 
-def _diff(config: GraphCodeConfig, range_text: str, parser: argparse.ArgumentParser) -> None:
-    """Print how the graph changes from the first ref to the second (or the working tree)."""
+def _diff(config: GraphCodeConfig, range_text: str, use_cache: bool, parser: argparse.ArgumentParser) -> None:
+    """Print how the graph changes from the first version to the second (or the working tree)."""
     try:
-        base_ref, head_ref = parse_range(range_text)
+        versions = parse_range(range_text)
     except ValueError as error:
         parser.error(str(error))
     _prepare_output_folder(config)  # the commit graph cache lives in .graphcode/cache/
-    diff = compare_graphs(graph_at(config, base_ref), graph_at(config, head_ref))
-    print(markdown_report(diff, base_ref, head_ref), end="")
+    before = base_ref(config, versions)
+    diff = compare_graphs(graph_at(config, before, use_cache), graph_at(config, versions.head, use_cache))
+    base_name = f"where {versions.head} left {versions.base}" if versions.from_branch_point else versions.base
+    print(markdown_report(diff, base_name, versions.head), end="")
 
 
 def _open_in_browser(page: Path) -> None:

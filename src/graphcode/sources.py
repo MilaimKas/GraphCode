@@ -138,7 +138,21 @@ def resolve_commit(project_root: Path, ref: str) -> str:
     try:
         return _git(project_root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
     except (OSError, subprocess.CalledProcessError) as error:
-        raise SourceError(f"unknown git ref {ref!r} in {project_root}") from error
+        raise SourceError(f"unknown git ref {ref!r} in {project_root} (is it a git repository?)") from error
+
+
+def merge_base(project_root: Path, first: str, second: str) -> str:
+    """Return the commit where ``second`` branched off ``first`` (git's ``first...second``).
+
+    Raises
+    ------
+    SourceError
+        If the two have no common commit.
+    """
+    try:
+        return _git(project_root, "merge-base", resolve_commit(project_root, first), resolve_commit(project_root, second))
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise SourceError(f"{first} and {second} have no common commit") from error
 
 
 def git_state(project_root: Path, paths: Sequence[str] = ()) -> tuple[str | None, bool]:
