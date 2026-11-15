@@ -41,6 +41,11 @@ uv run graphcode trace @dag-and-sample       # a scenario from pyproject.toml
 uv run graphcode trace mypackage.io:load --args '["x.json"]' --kwargs '{"strict": true}'
 uv run graphcode trace mypackage.cli:main -- --rows 10   # words after -- become sys.argv
 uv run graphcode trace --all                 # every scenario
+
+uv run graphcode diff main --open            # how the working tree changes the graph since main
+uv run graphcode diff main...feature         # what a branch changed since it left main (as a PR)
+uv run graphcode diff main..feature          # the last commits of both
+uv run graphcode diff main --format md       # a Markdown summary, to paste into a pull request
 ```
 
 - Everything is written to `.graphcode/`, which ignores itself in git.
@@ -65,6 +70,18 @@ In both modes:
   - the nodes and calls that ran are highlighted;
   - calls missing from the static graph are added in a separate style.
 - A banner warns when the trace and the graph come from different commits or from uncommitted code.
+
+## PR diff
+
+- Each version is read straight from git: nothing is checked out and no code runs.
+- **Modified** means the structure changed. Formatting, comments and docstrings don't count, because definitions are compared by a fingerprint of their syntax tree.
+- **Moved or renamed:** a removed and an added definition with the same structure. A definition shorter than 3 lines is never paired as a move.
+- The summary calls out **new dependencies between modules** and **new import cycles**.
+- The page `.graphcode/diff-<base>-<head>.html` shows the new graph with its changes:
+  - added nodes in green, modified ones in orange, moved ones in purple;
+  - removed nodes as grey ghosts;
+  - a before/after code diff in the panel.
+- Commit graphs are cached in `.graphcode/cache/`. Use `--no-cache` to rebuild them.
 
 ## Good to know
 

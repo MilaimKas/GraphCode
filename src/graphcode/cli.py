@@ -196,13 +196,16 @@ def _diff(config: GraphCodeConfig, options: argparse.Namespace, parser: argparse
     diff = compare_graphs(base, head)
     base_name = f"where {versions.head} left {versions.base}" if versions.from_branch_point else versions.base
     if options.format == "md":
+        if options.open:
+            parser.error("--open shows the diff page; it does not apply to --format md")
         print(markdown_report(diff, base_name, versions.head), end="")
         return
     graph, sources, details = diff_page_data(
         diff, base, head, reader_at(config, before), reader_at(config, versions.head)
     )
     details |= {"base_label": version_label(base_name, base.header), "head_label": version_label(versions.head, head.header)}
-    file_name = f"diff-{_file_safe(versions.base)}-{_file_safe(versions.head or 'worktree')}.html"
+    middle = "-since-" if versions.from_branch_point else "-"  # main...feature and main..feature differ
+    file_name = f"diff-{_file_safe(versions.base)}{middle}{_file_safe(versions.head or 'worktree')}.html"
     page = write_diff_page(graph, sources, details, config.output_folder / file_name)
     print(f"{len(diff.added)} added, {len(diff.removed)} removed, {len(diff.modified)} modified, {len(diff.moved)} moved -> {page}")
     if options.open:

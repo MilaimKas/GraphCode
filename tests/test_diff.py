@@ -14,6 +14,7 @@ from graphcode.cli import main as cli_main
 from graphcode.config import load_config
 from graphcode.diff.compare import IncomparableGraphsError, NodeChange, compare_graphs
 from graphcode.diff.load import VersionRange, base_ref, graph_at, parse_range
+from graphcode.diff.page import diff_page_data
 from graphcode.graph.build import _extract
 from graphcode.graph.model import ArchitectureGraph, GraphHeader, Node
 from graphcode.graph.serialization import write_graph
@@ -249,3 +250,22 @@ def test_cli_diff_writes_the_page(repository: Path, capsys: pytest.CaptureFixtur
     assert "-    return x.strip()" in data["diff"]["code"]["pkg.util:clean"]
     assert "+    return x.strip().lower()" in data["diff"]["code"]["pkg.util:clean"]
     assert data["diff"]["base_label"].startswith("v1 (") and data["diff"]["head_label"].startswith("working tree")
+
+
+def test_page_data_for_a_move_and_a_removed_edge() -> None:
+    """A move gives a purple new node, a ghost at the old key, links both ways, and a code diff keyed by the new key."""
+    base_files = changed(pkg_util="def clean(x):\n    text = x.strip()\n    return text\n")
+    head_files = changed(pkg_util="def tidy(x):\n    text = x.strip()\n    return text\n")
+    head_files["pkg/core.py"] = BASE["pkg/core.py"].replace("clean", "tidy")
+    base, head = graph_of(base_files), graph_of(head_files)
+    graph, sources, details = diff_page_data(
+        compare_graphs(base, head), base, head, base_files.__getitem__, head_files.__getitem__
+    )
+    status = {node["key"]: (node["status"], node["file"]) for node in graph["nodes"]}
+    assert status["pkg.util:tidy"] == ("moved-to", "pkg/util.py")
+    assert status["pkg.util:clean"] == ("moved-from", "before:pkg/util.py")
+    assert details["moves"] == {"pkg.util:clean": "pkg.util:tidy", "pkg.util:tidy": "pkg.util:clean"}
+    assert "-def clean(x):" in details["code"]["pkg.util:tidy"]
+    removed = [edge for edge in graph["edges"] if edge["status"] == "removed"]
+    assert [(edge["source"], edge["target"]) for edge in removed] == [("pkg.core:run", "pkg.util:clean")]
+    assert "before:pkg/util.py" in sources

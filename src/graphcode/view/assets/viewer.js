@@ -272,7 +272,8 @@
       const link = element("a", edge[end]);
       link.addEventListener("click", () => focus(edge[end]));
       const inferred = edge.confidence === "inferred" ? ", inferred" : "";
-      item.append(link, document.createTextNode(` (${edge.kind}${inferred}, line ${edge.lines.join(", ")})`));
+      const removed = edge.status === "removed" ? ", removed: in the old version only" : "";  // diff pages
+      item.append(link, document.createTextNode(` (${edge.kind}${inferred}, line ${edge.lines.join(", ")}${removed})`));
       list.append(item);
     }
     panel.append(list);

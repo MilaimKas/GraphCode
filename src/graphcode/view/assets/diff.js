@@ -28,7 +28,8 @@
     .selector("node[status = 'moved-to']").style({ "border-color": MOVED, "border-width": 4, "background-color": "#f3e5f5" })
     .selector("node[status = 'removed'], node[status = 'moved-from']")
     .style({ "border-color": GHOST, "border-style": "dashed", "background-color": "#fafafa", color: GHOST, opacity: 0.7 })
-    .selector("edge[status = 'unchanged']").style({ opacity: 0.25 })
+    // Unchanged edges fade; so do edges redrawn onto a closed box (they carry no status).
+    .selector("edge[status = 'unchanged'], edge[!status]").style({ opacity: 0.25 })
     .selector("edge[status = 'added']").style({ "line-color": ADDED, "target-arrow-color": ADDED, width: 3, opacity: 1 })
     .selector("edge[status = 'removed']")
     .style({ "line-color": GHOST, "target-arrow-color": GHOST, "line-style": "dashed", width: 2, opacity: 0.8 })
@@ -53,7 +54,12 @@
   });
 
   // Then close again every box below module level without a change inside.
-  collapseDefault((box) => box.descendants().some((member) => changed(member.id())));
+  // A box also stays open when an edge of its contents changed (a call can change while both ends stay the same).
+  collapseDefault((box) => {
+    const members = box.descendants();
+    return members.some((member) => changed(member.id()))
+      || members.connectedEdges().some((edge) => edge.data("status") !== "unchanged");
+  });
 
   const banner = document.getElementById("diff-banner");
   banner.textContent = `Changes from ${diff.base_label} to ${diff.head_label}`;

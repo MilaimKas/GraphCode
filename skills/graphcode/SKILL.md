@@ -1,6 +1,6 @@
 ---
 name: graphcode
-description: Map a Python package's architecture (who calls, imports or inherits what) and record which functions a real call runs, with the graphcode CLI. Use when a project's pyproject.toml has a [tool.graphcode] section, when asked how a package is structured or what depends on a function, or to follow what a call actually executes.
+description: Map a Python package's architecture (who calls, imports or inherits what), record which functions a real call runs, and show how a change alters the architecture, with the graphcode CLI. Use when a project's pyproject.toml has a [tool.graphcode] section, when asked how a package is structured or what depends on a function, to follow what a call actually executes, or to review the architectural effect of a branch or pull request.
 ---
 
 # graphcode
@@ -66,6 +66,13 @@ You read the JSON files. You point the human at the page.
    - **`outcome`:** `return`, `raise` (with `exception`), or `unfinished`. `unfinished` means the step cap stopped the recording, or a generator was abandoned.
    - **Header:** `error` names the exception that ended the scenario; `truncated` is set at 50,000 steps; `commit` and `dirty` identify the code that was traced.
 4. Compare with `graph.json`. A caller → callee pair with no `calls` edge is a **runtime-only** call: the static graph missed it, typically polymorphism such as `node.noise.sample()`.
+
+## Review a change
+
+1. Run `uv run graphcode diff main...<branch> --format md` for what a branch changed (the PR view). Use `diff main` for the working tree against main, or `a..b` for two branch tips.
+2. Lead with **New dependencies between modules** and **New import cycles**: they are the architectural news. Then list the modified, moved and removed definitions.
+3. "Modified" is structural; formatting and docstrings never count. A definition shorter than 3 lines is never paired as a move.
+4. For the human, run the same command without `--format md`, adding `--open`. It writes `.graphcode/diff-<base>-<head>.html`.
 
 ## Show the human
 

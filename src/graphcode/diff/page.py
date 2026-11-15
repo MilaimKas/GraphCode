@@ -10,7 +10,7 @@ The page draws one graph, the union of both versions:
 A ghost's code is the old file's text: its ``file`` is prefixed with
 ``before:``, and that old text is embedded under the prefixed name. A
 modified or moved definition also gets a line-by-line diff of its code
-(``difflib``), shown in the side panel.
+(``difflib``), shown in the side panel; its old text is only read for that.
 
 The page data stays plain JSON-like dicts: the ``view`` package reads it
 without importing ``graph`` or ``diff``.
@@ -74,12 +74,13 @@ def diff_page_data(
     graph = {"header": graph_to_dict(head)["header"], "nodes": nodes, "edges": edges}
 
     sources = {path: read_head(path) for path in sorted({node.file for node in head.nodes})}
-    old_files = {node.file for node, _ in ghosts} | {change.before.file for change in diff.modified + diff.moved}
-    sources.update({BEFORE_PREFIX + path: read_base(path) for path in sorted(old_files)})
-    code = {
-        str(change.after.key): _code_diff(change.before, change.after, sources[BEFORE_PREFIX + change.before.file], sources[change.after.file])
-        for change in diff.modified + diff.moved
-    }
+    # Old texts are embedded only for ghosts, whose code the panel shows.
+    sources.update({BEFORE_PREFIX + path: read_base(path) for path in sorted({node.file for node, _ in ghosts})})
+    code = {}
+    for change in diff.modified + diff.moved:
+        before_text = read_base(change.before.file)
+        after_text = sources[change.after.file]
+        code[str(change.after.key)] = _code_diff(change.before, change.after, before_text, after_text)
     moves = {str(change.before.key): str(change.after.key) for change in diff.moved}
     moves.update({str(change.after.key): str(change.before.key) for change in diff.moved})
     return graph, sources, {"code": code, "moves": moves}
@@ -97,7 +98,7 @@ def _by_identity(edge: Edge) -> tuple[NodeKey, NodeKey, EdgeKind]:
 
 def _definition_lines(node: Node, text: str) -> list[str]:
     """The lines of a definition (all its spans), from its file's text."""
-    lines = text.splitlines()
+    lines = text.split("\n")  # as the viewer splits, and as Python numbers lines (splitlines also breaks on form feeds)
     return [line for span in node.spans for line in lines[span.start - 1 : span.end]]
 
 
