@@ -33,8 +33,8 @@ def test_render_embeds_graph_sources_and_scripts() -> None:
     graph = {"nodes": [{"key": "p", "file": "p/__init__.py"}], "edges": []}
     sources = {"p/__init__.py": "x = 1\n"}
     page = render_viewer(graph, sources, "p")
-    assert embedded_data(page) == {"graph": graph, "sources": sources, "traces": []}
-    assert page.count("<script>") == 9  # 3 libraries, viewer, trace, network-elements, network, player, panel
+    assert embedded_data(page) == {"graph": graph, "sources": sources, "traces": [], "diff": None}
+    assert page.count("<script>") == 10  # 3 libraries, viewer, trace, diff, network-elements, network, player, panel
     assert not re.search(r"__(TITLE|STYLE|SCRIPTS|GRAPH_DATA)__", page)
 
 

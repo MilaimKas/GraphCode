@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import platform
+import re
 import subprocess
 import sys
 import webbrowser
@@ -28,8 +29,9 @@ from pathlib import Path
 
 from graphcode.config import ConfigError, GraphCodeConfig, load_config
 from graphcode.diff.compare import IncomparableGraphsError, compare_graphs
-from graphcode.diff.load import base_ref, graph_at, parse_range
-from graphcode.diff.report import markdown_report
+from graphcode.diff.load import base_ref, graph_at, parse_range, reader_at
+from graphcode.diff.page import diff_page_data
+from graphcode.diff.report import markdown_report, version_label
 from graphcode.graph.build import build_graph
 from graphcode.graph.definitions import ExtractionError
 from graphcode.graph.serialization import write_graph
@@ -43,7 +45,7 @@ from graphcode.trace.targets import (
     parse_target,
     scenario_target,
 )
-from graphcode.view.generate import write_viewer
+from graphcode.view.generate import write_diff_page, write_viewer
 
 GRAPH_FILE = "graph.json"
 VIEWER_FILE = "viewer.html"
@@ -65,7 +67,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
         elif options.command == "view":
             _view(config, rebuild=not options.no_build, open_browser=options.open)
         elif options.command == "diff":
-            _diff(config, options.range, not options.no_cache, parser)
+            _diff(config, options, parser)
         else:
             return _trace(config, _trace_targets(config, options, target_argv, parser), rebuild=not options.no_build)
     except (ConfigError, SourceError, ExtractionError, TargetError, IncomparableGraphsError) as error:
@@ -102,7 +104,11 @@ def _parser() -> argparse.ArgumentParser:
         "range", help="<ref> (vs the working tree), <ref>..<ref> (both last commits) or <ref>...<ref> (since the branch point)"
     )
     diff.add_argument("--no-cache", action="store_true", help="rebuild commit graphs instead of reusing .graphcode/cache/")
-    diff.add_argument("--format", choices=["md"], default="md", help="output: a Markdown summary on stdout")
+    diff.add_argument(
+        "--format", choices=["html", "md"], default="html",
+        help="html: write .graphcode/diff-<base>-<head>.html (default); md: print a Markdown summary",
+    )
+    diff.add_argument("--open", action="store_true", help="open the diff page in the browser")
     return parser
 
 
@@ -177,17 +183,35 @@ def _trace(config: GraphCodeConfig, targets: list[TraceTarget], rebuild: bool) -
     return max(exit_codes)
 
 
-def _diff(config: GraphCodeConfig, range_text: str, use_cache: bool, parser: argparse.ArgumentParser) -> None:
-    """Print how the graph changes from the first version to the second (or the working tree)."""
+def _diff(config: GraphCodeConfig, options: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Show how the graph changes from the first version to the second (or the working tree)."""
     try:
-        versions = parse_range(range_text)
+        versions = parse_range(options.range)
     except ValueError as error:
         parser.error(str(error))
     _prepare_output_folder(config)  # the commit graph cache lives in .graphcode/cache/
     before = base_ref(config, versions)
-    diff = compare_graphs(graph_at(config, before, use_cache), graph_at(config, versions.head, use_cache))
+    base = graph_at(config, before, not options.no_cache)
+    head = graph_at(config, versions.head, not options.no_cache)
+    diff = compare_graphs(base, head)
     base_name = f"where {versions.head} left {versions.base}" if versions.from_branch_point else versions.base
-    print(markdown_report(diff, base_name, versions.head), end="")
+    if options.format == "md":
+        print(markdown_report(diff, base_name, versions.head), end="")
+        return
+    graph, sources, details = diff_page_data(
+        diff, base, head, reader_at(config, before), reader_at(config, versions.head)
+    )
+    details |= {"base_label": version_label(base_name, base.header), "head_label": version_label(versions.head, head.header)}
+    file_name = f"diff-{_file_safe(versions.base)}-{_file_safe(versions.head or 'worktree')}.html"
+    page = write_diff_page(graph, sources, details, config.output_folder / file_name)
+    print(f"{len(diff.added)} added, {len(diff.removed)} removed, {len(diff.modified)} modified, {len(diff.moved)} moved -> {page}")
+    if options.open:
+        _open_in_browser(page)
+
+
+def _file_safe(ref: str) -> str:
+    """A ref usable in a file name: "feature/x" -> "feature-x", "HEAD~2" -> "HEAD-2"."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", ref)
 
 
 def _open_in_browser(page: Path) -> None:

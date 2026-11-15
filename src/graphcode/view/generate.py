@@ -25,7 +25,10 @@ from graphcode.sources import SourceReader
 
 # Load order matters: cytoscape before its plugin; dagre is used directly.
 # trace.js and the network files after viewer.js: they use what viewer.js exposes on window.graphcode.
-_SCRIPT_FILES = ("dagre.min.js", "cytoscape.min.js", "cytoscape-expand-collapse.js", "viewer.js", "trace.js", "network-elements.js", "network.js", "player.js", "panel.js")
+_SCRIPT_FILES = (
+    "dagre.min.js", "cytoscape.min.js", "cytoscape-expand-collapse.js",
+    "viewer.js", "trace.js", "diff.js", "network-elements.js", "network.js", "player.js", "panel.js",
+)
 TRACE_SCHEMA_VERSION = 1  # the version of graphcode.trace.format this viewer can show
 _PLACEHOLDER = re.compile(r"__(TITLE|STYLE|SCRIPTS|GRAPH_DATA)__")
 
@@ -35,6 +38,7 @@ def render_viewer(
     sources: Mapping[str, str],
     title: str,
     traces: Sequence[Mapping[str, Any]] = (),
+    diff: Mapping[str, Any] | None = None,
 ) -> str:
     """Return the viewer page as HTML text.
 
@@ -48,12 +52,15 @@ def render_viewer(
         Page title, usually the package name.
     traces : sequence of mapping
         Content of each trace file, in the order of the page's trace menu.
+    diff : mapping or None
+        For a diff page: labels of both versions, code diffs and moves (see
+        ``graphcode.diff.page``); the graph's nodes and edges then carry a ``status``.
     """
     assets = files("graphcode.view") / "assets"
     scripts = "\n".join(
         f"<script>{_safe_inside_script((assets / name).read_text(encoding='utf-8'))}</script>" for name in _SCRIPT_FILES
     )
-    data = json.dumps({"graph": graph, "sources": sources, "traces": list(traces)}, ensure_ascii=False)
+    data = json.dumps({"graph": graph, "sources": sources, "traces": list(traces), "diff": diff}, ensure_ascii=False)
     parts = {
         "TITLE": html.escape(title),
         "STYLE": (assets / "viewer.css").read_text(encoding="utf-8"),
@@ -86,6 +93,23 @@ def write_viewer(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     traces = _read_traces(traces_folder) if traces_folder is not None else []
     output_path.write_text(render_viewer(graph, sources, title, traces), encoding="utf-8")
+    return output_path
+
+
+def write_diff_page(
+    graph: Mapping[str, Any], sources: Mapping[str, str], diff: Mapping[str, Any], output_path: Path
+) -> Path:
+    """Write the diff page: the union graph with statuses, both versions' texts, the code diffs.
+
+    Returns
+    -------
+    Path
+        ``output_path``, for printing.
+    """
+    roots = [node["key"] for node in graph["nodes"] if node["parent"] is None]
+    title = f"{roots[0] if len(roots) == 1 else 'graphcode'} diff"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_viewer(graph, sources, title, diff=diff), encoding="utf-8")
     return output_path
 
 

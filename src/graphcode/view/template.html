@@ -31,6 +31,7 @@
   </span>
 </header>
 <div id="trace-banner" hidden></div>
+<div id="diff-banner" hidden></div>
 <main>
   <div id="graph"></div>
   <div id="network" hidden></div>
@@ -48,6 +49,18 @@
         <li><b>Dashed ring:</b> a folded class; double-click to show or hide its methods.</li>
         <li><b>Hover or click</b> a ball to light up its neighbours.</li>
       </ul>
+    </section>
+    <section id="diff-legend" hidden>
+      <h3>Changes</h3>
+      <ul>
+        <li><span class="swatch status-added"></span>added</li>
+        <li><span class="swatch status-modified"></span>modified (structure, not formatting or docstrings)</li>
+        <li><span class="swatch status-moved-to"></span>moved or renamed (here now)</li>
+        <li><span class="swatch status-removed"></span>removed, or the old place of a moved definition</li>
+        <li><span class="line status-added"></span>edge added</li>
+        <li><span class="line status-removed"></span>edge removed</li>
+      </ul>
+      <p class="note">Boxes with changes are open; a box's label counts the changes inside it.</p>
     </section>
     <section id="legend">
       <h3>Legend</h3>

@@ -32,7 +32,7 @@ def markdown_report(diff: GraphDiff, base_name: str, head_name: str | None) -> s
     base_name, head_name : str, str or None
         The refs as the user typed them; None for the working tree.
     """
-    title = f"## graphcode diff: {_version(base_name, diff.base)} → {_version(head_name, diff.head)}"
+    title = f"## graphcode diff: {version_label(base_name, diff.base)} → {version_label(head_name, diff.head)}"
     if diff.is_empty:
         return f"{title}\n\nNo structural change (formatting, comments and docstrings are not counted).\n"
     counts = (
@@ -54,8 +54,8 @@ def markdown_report(diff: GraphDiff, base_name: str, head_name: str | None) -> s
     return "\n\n".join(section for section in sections if section) + "\n"
 
 
-def _version(name: str | None, header: GraphHeader) -> str:
-    """``main (a1b2c3d)``, or ``working tree (a1b2c3d, uncommitted changes)``."""
+def version_label(name: str | None, header: GraphHeader) -> str:
+    """How a version is named: ``main (a1b2c3d)``, or ``working tree (a1b2c3d, uncommitted changes)``."""
     details = [header.commit[:7]] if header.commit else []
     if header.dirty:
         details.append("uncommitted changes")

@@ -30,7 +30,13 @@ from graphcode.graph.model import (
     installed_graphcode_version,
 )
 from graphcode.graph.serialization import read_graph, write_graph
-from graphcode.sources import merge_base, resolve_commit
+from graphcode.sources import (
+    SourceReader,
+    commit_reader,
+    merge_base,
+    resolve_commit,
+    working_tree_reader,
+)
 
 CACHE_FOLDER = "cache"
 
@@ -99,6 +105,13 @@ def graph_at(config: GraphCodeConfig, ref: str | None, use_cache: bool = True) -
     write_graph(graph, partial_file)
     os.replace(partial_file, cache_file)
     return graph
+
+
+def reader_at(config: GraphCodeConfig, ref: str | None) -> SourceReader:
+    """A reader of the project's files at ``ref``, or in the working tree when ``ref`` is None."""
+    if ref is None:
+        return working_tree_reader(config.project_root)
+    return commit_reader(config.project_root, resolve_commit(config.project_root, ref))
 
 
 def _settings_code(config: GraphCodeConfig) -> str:

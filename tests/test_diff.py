@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -66,9 +68,10 @@ def test_modified_added_removed_and_edges() -> None:
 
 def test_unique_same_structure_is_a_move() -> None:
     """A renamed function keeps its fingerprint: one move, not a removal and an addition."""
-    renamed = changed(pkg_util="def tidy(x):\n    return x.strip()\n")
+    base = changed(pkg_util="def clean(x):\n    text = x.strip()\n    return text\n")
+    renamed = changed(pkg_util="def tidy(x):\n    text = x.strip()\n    return text\n")
     renamed["pkg/core.py"] = BASE["pkg/core.py"].replace("clean", "tidy")
-    diff = compare_graphs(graph_of(BASE), graph_of(renamed))
+    diff = compare_graphs(graph_of(base), graph_of(renamed))
     assert keys(diff.moved) == ["pkg.util:clean -> pkg.util:tidy"]
     assert diff.added == () and diff.removed == ()
 
@@ -116,7 +119,7 @@ def test_unrelated_plain_classes_are_not_a_move() -> None:
 
 def test_a_class_moved_with_its_methods() -> None:
     """A class moved to another module is one move, and so is each of its (unique) methods."""
-    cls = "class Cache:\n    def get(self):\n        return 1\n"
+    cls = "class Cache:\n    def get(self):\n        value = 1\n        return value\n"
     diff = compare_graphs(graph_of({**BASE, "pkg/cache.py": cls}), graph_of({**BASE, "pkg/store.py": cls}))
     assert keys(diff.moved) == ["pkg.cache:Cache -> pkg.store:Cache", "pkg.cache:Cache.get -> pkg.store:Cache.get"]
 
@@ -216,12 +219,12 @@ def test_cache_depends_on_settings(repository: Path) -> None:
 
 def test_cli_diff_prints_the_markdown_summary(repository: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """``graphcode diff v1..HEAD`` lists what v2 changed; v1 against itself has no change."""
-    assert cli_main(["diff", "--project", str(repository), "v1..HEAD"]) == 0
+    assert cli_main(["diff", "--project", str(repository), "--format", "md", "v1..HEAD"]) == 0
     report = capsys.readouterr().out
     assert report.startswith("## graphcode diff: v1 (")
     assert "1 added · 0 removed · 1 modified" in report
     assert "- `pkg.util:extra` (function)" in report and "- `pkg.util:clean` (function)" in report
-    assert cli_main(["diff", "--project", str(repository), "v1..v1"]) == 0
+    assert cli_main(["diff", "--project", str(repository), "--format", "md", "v1..v1"]) == 0
     assert "No structural change" in capsys.readouterr().out
 
 
@@ -229,3 +232,20 @@ def test_cli_diff_unknown_ref(repository: Path, capsys: pytest.CaptureFixture[st
     """An unknown ref is a one-line error and exit code 1."""
     assert cli_main(["diff", "--project", str(repository), "nope"]) == 1
     assert "unknown git ref 'nope'" in capsys.readouterr().err
+
+
+def test_cli_diff_writes_the_page(repository: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """The page holds the new graph with statuses, the ghosts of removed nodes, and code diffs."""
+    (repository / "pkg/core.py").write_text(BASE["pkg/core.py"].replace("def other_stub():\n    pass\n", ""))
+    assert cli_main(["diff", "--project", str(repository), "v1"]) == 0
+    assert "-> " in capsys.readouterr().out
+    page = (repository / ".graphcode" / "diff-v1-worktree.html").read_text(encoding="utf-8")
+    data = json.loads(re.search(r'<script type="application/json" id="graph-data">(.*?)</script>', page, re.DOTALL).group(1))
+    status = {node["key"]: node["status"] for node in data["graph"]["nodes"]}
+    assert (status["pkg.util:extra"], status["pkg.util:clean"], status["pkg.core:run"]) == ("added", "modified", "unchanged")
+    ghost = next(node for node in data["graph"]["nodes"] if node["key"] == "pkg.core:other_stub")
+    assert (ghost["status"], ghost["file"]) == ("removed", "before:pkg/core.py")
+    assert "before:pkg/core.py" in data["sources"]
+    assert "-    return x.strip()" in data["diff"]["code"]["pkg.util:clean"]
+    assert "+    return x.strip().lower()" in data["diff"]["code"]["pkg.util:clean"]
+    assert data["diff"]["base_label"].startswith("v1 (") and data["diff"]["head_label"].startswith("working tree")

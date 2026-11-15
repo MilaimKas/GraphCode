@@ -274,13 +274,15 @@
     try { localStorage.setItem("graphcode-mode", mode); } catch (error) { /* private window: not remembered */ }
   }
 
-  /** Mode from the URL (#mode=network), else the remembered one, else classic. */
+  /** Mode from the URL (#mode=network), else the remembered one, else classic; a diff page is always classic. */
   function initialMode() {
+    if (data.diff) return "classic";  // Network mode does not show changes yet
     if (location.hash.slice(1).split("&").includes("mode=network")) return "network";
     if (location.hash.slice(1).split("&").includes("mode=classic")) return "classic";
     try { return localStorage.getItem("graphcode-mode") === "network" ? "network" : "classic"; } catch (error) { return "classic"; }
   }
 
+  if (data.diff) document.getElementById("mode-network").hidden = true;
   fillLegend();
   // Search, panel links and call-tree rows call viewer.js's focus(): in Network mode, focus the ball here instead.
   shared.focusHooks.push((key) => {

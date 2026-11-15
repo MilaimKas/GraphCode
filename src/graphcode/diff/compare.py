@@ -8,8 +8,9 @@ Nodes are matched by key. Rules:
   fingerprint and the same member names (a class's methods, a function's
   nested definitions), paired only when exactly one removed and one added
   definition share them. Trivial bodies (``pass``, ``...``) share a fingerprint
-  across many functions, so a non-unique match is no move; the member names
-  keep two unrelated plain classes (whose own body is empty) apart;
+  across many functions, so a non-unique match is no move, and a definition
+  shorter than 3 lines is never matched (too little to recognise); the member
+  names keep two unrelated plain classes (whose own body is empty) apart;
 - **edges**: compared by (source, target, kind); a call moving to another line
   is no change. A moved definition's edges show as removed and added;
 - **new dependency**: a pair of modules linked by any edge (import, call or
@@ -44,6 +45,7 @@ from graphcode.graph.model import (
 from graphcode.keys import NodeKey
 
 _NEVER_MOVED = frozenset({NodeKind.PACKAGE, NodeKind.MODULE})  # a file "move" is a removed and an added module
+_MIN_MOVE_LINES = 3  # shorter definitions (one-line stubs, "pass") are too generic to pair as moves
 
 
 class IncomparableGraphsError(Exception):
@@ -174,10 +176,10 @@ def _moves(
     removed_by_signature: dict[tuple, list[Node]] = defaultdict(list)
     added_by_signature: dict[tuple, list[Node]] = defaultdict(list)
     for node in removed:
-        if node.fingerprint and node.kind not in _NEVER_MOVED:
+        if _can_move(node):
             removed_by_signature[(node.fingerprint, old_members.get(node.key, ()))].append(node)
     for node in added:
-        if node.fingerprint and node.kind not in _NEVER_MOVED:
+        if _can_move(node):
             added_by_signature[(node.fingerprint, new_members.get(node.key, ()))].append(node)
     moves = [
         NodeChange(removed_by_signature[signature][0], added_by_signature[signature][0])
@@ -185,6 +187,12 @@ def _moves(
         if len(removed_by_signature[signature]) == 1 and len(added_by_signature[signature]) == 1
     ]
     return tuple(sorted(moves, key=lambda change: change.before.key))
+
+
+def _can_move(node: Node) -> bool:
+    """Whether a definition is specific enough to be recognised at another key."""
+    lines = sum(span.end - span.start + 1 for span in node.spans)
+    return bool(node.fingerprint) and node.kind not in _NEVER_MOVED and lines >= _MIN_MOVE_LINES
 
 
 def _module_links(edges: Iterable[Edge]) -> set[tuple[str, str]]:

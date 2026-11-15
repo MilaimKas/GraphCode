@@ -58,27 +58,31 @@ def graph_to_dict(graph: ArchitectureGraph) -> dict[str, Any]:
             "dirty": header.dirty,
             "fingerprint_scheme": header.fingerprint_scheme,
         },
-        "nodes": [
-            {
-                "key": str(node.key),
-                "kind": node.kind.value,
-                "file": node.file,
-                "spans": [[span.start, span.end] for span in node.spans],
-                "parent": None if node.parent is None else str(node.parent),
-                "fingerprint": node.fingerprint,
-            }
-            for node in nodes
-        ],
-        "edges": [
-            {
-                "source": str(edge.source),
-                "target": str(edge.target),
-                "kind": edge.kind.value,
-                "confidence": edge.confidence.value,
-                "lines": list(edge.lines),
-            }
-            for edge in edges
-        ],
+        "nodes": [node_to_dict(node) for node in nodes],
+        "edges": [edge_to_dict(edge) for edge in edges],
+    }
+
+
+def node_to_dict(node: Node) -> dict[str, Any]:
+    """One node as plain JSON data (keys as strings)."""
+    return {
+        "key": str(node.key),
+        "kind": node.kind.value,
+        "file": node.file,
+        "spans": [[span.start, span.end] for span in node.spans],
+        "parent": None if node.parent is None else str(node.parent),
+        "fingerprint": node.fingerprint,
+    }
+
+
+def edge_to_dict(edge: Edge) -> dict[str, Any]:
+    """One edge as plain JSON data (keys as strings)."""
+    return {
+        "source": str(edge.source),
+        "target": str(edge.target),
+        "kind": edge.kind.value,
+        "confidence": edge.confidence.value,
+        "lines": list(edge.lines),
     }
 
 
