@@ -13,11 +13,26 @@
   const graph = data.graph;
   const sources = data.sources;
   const nodeByKey = new Map(graph.nodes.map((node) => [node.key, node]));
-  const KIND_COLORS = {
-    package: "#3949ab", module: "#1e88e5", class: "#fb8c00", method: "#43a047", function: "#00897b",
-  };
   const BOX_KINDS = new Set(["package", "module"]);
   const NODES_ONLY = { includeEdges: false, includeOverlays: false };  // box size without edge curves
+
+  // --- theme and colour tokens ----------------------------------------------------
+  // Every colour is a token (--name) in viewer.css; the theme is <html data-theme="light|dark">.
+
+  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const themeHooks = [];  // functions run after the theme changed, to restyle graphs drawn by other files
+
+  /** The value of a colour token. Read from the page root: Network mode's own dark tokens sit on <body> and must not leak in. */
+  function token(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
+  }
+
+  /** Follow the system's light or dark setting. A manual toggle would set the same attribute. */
+  function followSystemTheme() {
+    document.documentElement.dataset.theme = darkQuery.matches ? "dark" : "light";
+  }
+  followSystemTheme();
+  darkQuery.addEventListener("change", followSystemTheme);
 
   // --- names ----------------------------------------------------------------
 
@@ -57,50 +72,69 @@
     });
   }
 
-  const style = [
-    {
-      selector: "node",
-      style: {
-        label: "data(label)", "font-size": 11, color: "#1f2933", "text-valign": "center", "text-halign": "center",
-        shape: "round-rectangle", "border-width": 1.5, "background-color": "#ffffff",
-        width: (node) => Math.max(36, node.data("label").length * 6.6 + 16), height: 24,
+  /** The Cytoscape style sheet, with the colours of the current theme. */
+  function buildStyle() {
+    /** Border and fill of one node kind, from its two tokens. */
+    const kindStyle = (kind, extra = {}) => ({
+      selector: `node[kind = '${kind}']`,
+      style: { "border-color": token(kind), "background-color": token(`${kind}-fill`), ...extra },
+    });
+    return [
+      {
+        selector: "node",
+        style: {
+          label: "data(label)", "font-size": 11, color: token("ink"), "text-valign": "center", "text-halign": "center",
+          shape: "round-rectangle", "border-width": 1.5, "background-color": token("surface"),
+          width: (node) => Math.max(36, node.data("label").length * 6.6 + 16), height: 24,
+        },
       },
-    },
-    { selector: "node[kind = 'package']", style: { "border-color": KIND_COLORS.package, "background-color": "#e8eaf6" } },
-    { selector: "node[kind = 'module']", style: { "border-color": KIND_COLORS.module, "background-color": "#e3f2fd" } },
-    { selector: "node[kind = 'class']", style: { "border-color": KIND_COLORS.class, "background-color": "#fff3e0" } },
-    { selector: "node[kind = 'method']", style: { "border-color": KIND_COLORS.method, "background-color": "#e8f5e9", shape: "ellipse" } },
-    { selector: "node[kind = 'function']", style: { "border-color": KIND_COLORS.function, "background-color": "#e0f2f1", shape: "ellipse" } },
-    {
-      selector: ":parent",
-      style: {
-        "text-valign": "top", "text-halign": "center", "text-margin-y": -4, "font-weight": "bold",
-        "background-opacity": 0.35, padding: 14, shape: "round-rectangle",
+      kindStyle("package", { "border-width": 3 }),  // the top level stands out
+      kindStyle("module"),
+      kindStyle("class"),
+      kindStyle("method", { shape: "ellipse" }),
+      kindStyle("function", { shape: "ellipse" }),
+      {
+        selector: ":parent",
+        style: {
+          "text-valign": "top", "text-halign": "center", "text-margin-y": -4, "font-weight": "bold",
+          "background-opacity": 0.35, padding: 14, shape: "round-rectangle",
+        },
       },
-    },
-    { selector: ".cy-expand-collapse-collapsed-node", style: { "border-width": 4, "border-style": "double" } },
-    {
-      selector: "edge",
-      style: {
-        // Straight: parallel edges (e.g. several methods' calls redrawn onto
-        // one collapsed class) overlap into one line instead of fanning out.
-        width: 1.5, "curve-style": "straight", "target-arrow-shape": "triangle", "arrow-scale": 0.9,
-        "line-color": "#52606d", "target-arrow-color": "#52606d", opacity: 0.85,
+      { selector: ".cy-expand-collapse-collapsed-node", style: { "border-width": 4, "border-style": "double" } },
+      {
+        selector: "edge",
+        style: {
+          // Straight: parallel edges (e.g. several methods' calls redrawn onto
+          // one collapsed class) overlap into one line instead of fanning out.
+          width: 1.5, "curve-style": "straight", "target-arrow-shape": "triangle", "arrow-scale": 0.9,
+          "line-color": token("calls"), "target-arrow-color": token("calls"), opacity: 0.85,
+        },
       },
-    },
-    { selector: "edge[kind = 'imports']", style: { width: 1, "line-color": "#1e88e5", "target-arrow-color": "#1e88e5", "target-arrow-shape": "vee" } },
-    {
-      selector: "edge[kind = 'inherits']",
-      style: { width: 3, "line-color": "#8e24aa", "target-arrow-color": "#8e24aa", "target-arrow-fill": "hollow" },
-    },
-    { selector: "edge[confidence = 'inferred']", style: { "line-style": "dashed" } },
-    { selector: "edge:loop", style: { "curve-style": "bezier" } },  // recursion: straight cannot draw a loop
-    { selector: ".faded", style: { opacity: 0.12 } },
-    { selector: "node.selected", style: { "border-width": 4, "border-color": "#d81b60" } },
-    { selector: ".hidden", style: { display: "none" } },
-  ];
+      {
+        selector: "edge[kind = 'imports']",
+        style: { width: 1, "line-color": token("imports"), "target-arrow-color": token("imports"), "target-arrow-shape": "vee" },
+      },
+      {
+        selector: "edge[kind = 'inherits']",
+        style: { width: 3, "line-color": token("inherits"), "target-arrow-color": token("inherits"), "target-arrow-fill": "hollow" },
+      },
+      { selector: "edge[confidence = 'inferred']", style: { "line-style": "dashed" } },
+      { selector: "edge:loop", style: { "curve-style": "bezier" } },  // recursion: straight cannot draw a loop
+      { selector: ".faded", style: { opacity: 0.12 } },
+      // Selection is neutral (ink), so it never reads as a trace or diff state.
+      { selector: "node.selected", style: { "border-width": 4, "border-color": token("selected") } },
+      { selector: ".hidden", style: { display: "none" } },
+    ];
+  }
 
-  const cy = cytoscape({ container: document.getElementById("graph"), elements, style, wheelSensitivity: 0.3 });
+  const cy = cytoscape({ container: document.getElementById("graph"), elements, style: buildStyle(), wheelSensitivity: 0.3 });
+
+  // A new theme replaces the whole style sheet, then lets trace.js and diff.js add their own rules again.
+  new MutationObserver(() => {
+    cy.style(buildStyle());
+    for (const restyle of themeHooks) restyle();
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
   const expandCollapse = cy.expandCollapse({
     layoutBy: () => runLayout(), fisheye: false, animate: false, undoable: false, cueEnabled: true,
   });
@@ -237,7 +271,8 @@
     const panel = document.getElementById("details");
     panel.replaceChildren();
     const badge = element("span", node.kind, "kind-badge");
-    badge.style.background = KIND_COLORS[node.kind];
+    // Kind fill with kind border and ink text: readable on both themes (white text fails on bright dark-theme colours).
+    Object.assign(badge.style, { background: token(`${node.kind}-fill`), border: `1px solid ${token(node.kind)}`, color: token("ink") });
     const heading = element("h2", `${key} `);
     heading.append(badge);
     panel.append(heading);
@@ -322,7 +357,7 @@
 
   // Shared with trace.js and network.js, which are loaded after this file.
   window.graphcode = {
-    data, cy, expandCollapse, nodeByKey, detailsHooks, focusHooks, stepHooks,
+    data, cy, expandCollapse, nodeByKey, detailsHooks, focusHooks, stepHooks, themeHooks, token,
     element, collapseDefault, focus, showDetails, shortName, isPrivate,
   };
 })();

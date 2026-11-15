@@ -1,7 +1,7 @@
 /* graphcode viewer: trace overlay, call-tree panel and staleness banner.
  *
  * Picking a trace in the toolbar menu:
- * - nodes that ran are outlined in amber, everything else fades;
+ * - nodes that ran are outlined in amber, everything else fades (colours: the tokens of viewer.css);
  * - calls that ran are drawn thick in amber; calls that ran but are missing
  *   from the static graph are added as new "runtime" edges, in red;
  * - boxes are opened exactly where something ran, closed elsewhere;
@@ -13,25 +13,31 @@
 (function () {
   "use strict";
 
-  const { data, cy, expandCollapse, nodeByKey, detailsHooks, stepHooks } = window.graphcode;
+  const { data, cy, expandCollapse, nodeByKey, detailsHooks, stepHooks, themeHooks, token } = window.graphcode;
   const { element, collapseDefault } = window.graphcode;
-  const RAN_COLOR = "#f59e0b";  // amber, as in Network mode
-  const RUNTIME_ONLY_COLOR = "#d50000";  // red: a call the static graph missed
-  const CURRENT_STEP_COLOR = "#1565c0";  // blue: the player's current step
   const traces = data.traces;
   const MAX_TREE_ROWS = 3000;  // a longer call tree is cut in the panel (the graph shows everything)
 
-  cy.style()
-    .selector("node.ran").style({ "border-width": 4, "border-color": RAN_COLOR })
-    .selector("edge.ran").style({ width: 4, opacity: 1, "line-color": RAN_COLOR, "target-arrow-color": RAN_COLOR })
-    .selector("edge[confidence = 'runtime']")
-    .style({ "line-color": RUNTIME_ONLY_COLOR, "target-arrow-color": RUNTIME_ONLY_COLOR, "line-style": "solid", width: 4.5 })
-    .selector(".untraced").style({ opacity: 0.12 })
-    .selector("node.selected").style({ opacity: 1 })  // a selected node stays visible even if it did not run
-    .selector("node.current").style({ "border-width": 7, "border-color": CURRENT_STEP_COLOR, opacity: 1 })
-    .selector("edge.current")
-    .style({ width: 7, "line-color": CURRENT_STEP_COLOR, "target-arrow-color": CURRENT_STEP_COLOR, opacity: 1, "z-index": 10 })
-    .update();
+  /**
+   * Add the trace rules to the style sheet, in the colours of the current theme:
+   * ran (amber), ran but missing from the static graph (red), the player's current step (pink).
+   * Run again after a theme change, which replaces the whole style sheet.
+   */
+  function addTraceStyle() {
+    cy.style()
+      .selector("node.ran").style({ "border-width": 4, "border-color": token("ran") })
+      .selector("edge.ran").style({ width: 4, opacity: 1, "line-color": token("ran"), "target-arrow-color": token("ran") })
+      .selector("edge[confidence = 'runtime']")
+      .style({ "line-color": token("runtime"), "target-arrow-color": token("runtime"), "line-style": "solid", width: 4.5 })
+      .selector(".untraced").style({ opacity: 0.12 })
+      .selector("node.selected").style({ opacity: 1 })  // a selected node stays visible even if it did not run
+      .selector("node.current").style({ "border-width": 7, "border-color": token("current"), opacity: 1 })
+      .selector("edge.current")
+      .style({ width: 7, "line-color": token("current"), "target-arrow-color": token("current"), opacity: 1, "z-index": 10 })
+      .update();
+  }
+  addTraceStyle();
+  themeHooks.push(addTraceStyle);
 
   /**
    * Whether a step's function is in the graph shown now. Not the trace's own

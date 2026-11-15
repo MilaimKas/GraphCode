@@ -1,20 +1,88 @@
-/* graphcode viewer: layout of the toolbar, graph canvas and side panel. */
+/* graphcode viewer: colour tokens, then the layout of the toolbar, graph canvas and side panel.
+ *
+ * One colour rule: KIND says what a thing is (cool hues: package, module, class,
+ * method, function), STATE says what happened to it (warm or saturated: selected,
+ * ran, current step, added, modified, moved, removed). A state never reuses a
+ * kind's hue, so a modified class cannot be mistaken for an ordinary one.
+ * Diff states and trace states never appear on the same page, so they may share hues.
+ *
+ * Every colour lives here, as a token. Light values are the default; the dark
+ * values apply with <html data-theme="dark">. Network mode forces them for now
+ * (its graph style is still written for a dark canvas; remove that selector once
+ * network-elements.js reads these tokens).
+ */
 :root {
+  color-scheme: light;
+
+  /* neutrals */
   --ink: #1f2933;
   --muted: #616e7c;
   --line: #d9e2ec;
   --surface: #ffffff;
   --page: #f5f7fa;
-  --package: #3949ab;
-  --module: #1e88e5;
-  --class: #fb8c00;
-  --method: #43a047;
-  --function: #00897b;
+  --canvas: #ffffff;           /* behind the graph */
+  --control-border: #d9e2ec;
+  --accent: #1565c0;           /* the active mode button */
+
+  /* kind: border colour and fill */
+  --package: #3949ab;  --package-fill: #e8eaf6;
+  --module: #1e88e5;   --module-fill: #e3f2fd;
+  --class: #00838f;    --class-fill: #e0f4f6;
+  --method: #5c6bc0;   --method-fill: #eceef8;
+  --function: #0097a7; --function-fill: #e0f7fa;
+
+  /* edges */
   --calls: #52606d;
   --imports: #1e88e5;
-  --inherits: #8e24aa;
-  --trace: #e65100;
+  --inherits: #6a1b9a;
+
+  /* state */
+  --selected: #1f2933;   /* ink outline */
+  --current: #d81b60;    /* the trace player's current step */
+  --ran: #f59e0b;        /* ran in the trace */
+  --runtime: #d32f2f;    /* ran, but missing from the static graph */
   --error: #c62828;
+  --added: #2e8b57;
+  --modified: #e07b00;
+  --moved: #8e44ad;
+  --removed: #9e9e9e;
+  --warning-fill: #fff8e1;
+  --warning-line: #ffe082;
+}
+
+:root[data-theme="dark"], body[data-mode="network"] {
+  color-scheme: dark;
+
+  --ink: #d5dbe6;
+  --muted: #8590a3;
+  --line: #262c3a;
+  --surface: #0e121b;
+  --page: #0b0e16;
+  --canvas: #07090f;
+  --control-border: #3a4256;
+  --accent: #1976d2;
+
+  --package: #7986cb;  --package-fill: #1a1f3d;
+  --module: #42a5f5;   --module-fill: #0f2336;
+  --class: #26c6da;    --class-fill: #0c2f36;
+  --method: #9fa8da;   --method-fill: #1b2038;
+  --function: #4dd0e1; --function-fill: #0d2f36;
+
+  --calls: #8fa3c4;
+  --imports: #42a5f5;
+  --inherits: #ce93d8;
+
+  --selected: #ffffff;
+  --current: #ff4081;
+  --ran: #ffb300;
+  --runtime: #ff5252;
+  --error: #ff6b6b;
+  --added: #4cd07d;
+  --modified: #ffa733;
+  --moved: #ce93d8;
+  --removed: #8590a3;
+  --warning-fill: #2a2410;
+  --warning-line: #5c4d10;
 }
 
 * { box-sizing: border-box; }
@@ -32,12 +100,14 @@ body {
 }
 #toolbar .title { font-size: 15px; }
 #toolbar .group { display: flex; gap: 10px; align-items: center; }
-#search { flex: 1 1 260px; max-width: 420px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; }
-button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--page); cursor: pointer; }
+#search { flex: 1 1 260px; max-width: 420px; padding: 5px 8px; }
+button, #search, select { color: var(--ink); border: 1px solid var(--control-border); border-radius: 4px; }
+button { padding: 4px 10px; background: var(--page); cursor: pointer; }
+#search, select { background: var(--surface); }
 button:hover { background: var(--line); }
 
 main { flex: 1; display: flex; min-height: 0; }
-#graph { flex: 1; min-width: 0; background: var(--surface); }
+#graph { flex: 1; min-width: 0; background: var(--canvas); }
 #panel {
   width: 420px; max-width: 75vw; flex-shrink: 0; overflow: auto; padding: 12px;
   border-left: 1px solid var(--line); background: var(--page);
@@ -57,22 +127,23 @@ pre.code .number { display: inline-block; width: 3.5em; padding-right: 8px; text
 ul.neighbours { margin: 0; padding-left: 16px; }
 ul.neighbours a { color: inherit; cursor: pointer; text-decoration: underline dotted; }
 
+/* legend swatches: one per kind (border and fill), one line per edge kind */
 #legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 #legend li { display: flex; align-items: center; gap: 8px; }
 .swatch { width: 18px; height: 12px; border-radius: 3px; border: 2px solid; }
-.swatch.package { border-color: var(--package); background: #e8eaf6; }
-.swatch.module { border-color: var(--module); background: #e3f2fd; }
-.swatch.class { border-color: var(--class); background: #fff3e0; }
-.swatch.method { border-color: var(--method); background: #e8f5e9; border-radius: 6px; }
-.swatch.function { border-color: var(--function); background: #e0f2f1; border-radius: 6px; }
+.swatch.package { border-color: var(--package); background: var(--package-fill); border-width: 3px; }  /* the top level stands out */
+.swatch.module { border-color: var(--module); background: var(--module-fill); }
+.swatch.class { border-color: var(--class); background: var(--class-fill); }
+.swatch.method { border-color: var(--method); background: var(--method-fill); border-radius: 6px; }
+.swatch.function { border-color: var(--function); background: var(--function-fill); border-radius: 6px; }
 .line { width: 28px; border-top: 2px solid; }
 .line.calls { border-color: var(--calls); }
 .line.inferred { border-top-style: dashed; }
 .line.imports { border-color: var(--imports); border-top-width: 1px; }
 .line.inherits { border-color: var(--inherits); border-top-width: 3px; }
 
-/* trace overlay (trace.js) */
-#trace-banner { padding: 6px 12px; background: #fff8e1; border-bottom: 1px solid #ffe082; }
+/* trace overlay (trace.js). Text in a state colour is mixed with the ink so it stays readable on both themes. */
+#trace-banner { padding: 6px 12px; background: var(--warning-fill); border-bottom: 1px solid var(--warning-line); }
 #trace-panel { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 #trace-panel h3 { margin-top: 0; }
 ol.call-tree { list-style: none; margin: 6px 0; padding: 0; max-height: 45vh; overflow: auto; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; }
@@ -80,34 +151,25 @@ ol.call-tree li { white-space: nowrap; }
 ol.call-tree a { color: inherit; cursor: pointer; }
 ol.call-tree a:hover { text-decoration: underline; }
 ol.call-tree a.unmatched { color: var(--muted); cursor: default; }
-.count { color: var(--trace); }
+.count { color: color-mix(in srgb, var(--ran) 65%, var(--ink)); }
 .trace-error { color: var(--error); }
-.trace-calls { color: var(--trace); font-weight: 600; }
-.line.ran { border-color: #f59e0b; border-top-width: 4px; }
-.line.runtime { border-color: #d50000; border-top-width: 4px; }
+.trace-calls { color: color-mix(in srgb, var(--ran) 65%, var(--ink)); font-weight: 600; }
+.line.ran { border-color: var(--ran); border-top-width: 4px; }
+.line.runtime { border-color: var(--runtime); border-top-width: 4px; }
 body:not(.tracing) #legend .trace-only { display: none; }  /* #legend: beats "#legend li" */
 
-/* Network mode (network.js): dark theme, switched by body[data-mode="network"] */
+/* Network mode (network.js): the page uses the dark tokens, switched by body[data-mode="network"] */
 #mode-group { gap: 0; }
 #mode-group button { border-radius: 0; }
 #mode-group button:first-child { border-radius: 4px 0 0 4px; }
 #mode-group button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
-#mode-group button.active { background: var(--module); border-color: var(--module); color: #fff; }
-#network { flex: 1; min-width: 0; background: #07090f; }
-body[data-mode="network"] {
-  --ink: #d5dbe6; --muted: #8590a3; --line: #262c3a; --surface: #0e121b; --page: #0b0e16;
-}
+#mode-group button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#network { flex: 1; min-width: 0; background: var(--canvas); }
 body[data-mode="network"] #graph, body[data-mode="network"] #legend { display: none; }
 body[data-mode="network"] #expand-all, body[data-mode="network"] #collapse-classes { display: none; }
-body[data-mode="network"] #trace-banner { background: #2a2410; border-color: #5c4d10; }
 #network-groups { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
 #network-groups li { display: flex; align-items: center; gap: 8px; }
 .ball { width: 14px; height: 14px; border-radius: 50%; }
-body[data-mode="network"] button, body[data-mode="network"] #search, body[data-mode="network"] select {
-  color: var(--ink); background: var(--surface); border-color: #3a4256;
-}
-body[data-mode="network"] button:hover { background: #1b2130; }
-body[data-mode="network"] #mode-group button.active { background: var(--module); border-color: var(--module); color: #fff; }
 
 /* legend notes as a list (Network mode) */
 ul.notes { margin: 6px 0 0; padding-left: 16px; color: var(--muted); display: grid; gap: 3px; }
@@ -117,32 +179,34 @@ ul.notes { margin: 6px 0 0; padding-left: 16px; color: var(--muted); display: gr
 #panel-resizer:hover, body.resizing #panel-resizer { opacity: 1; background: var(--muted); }
 body.resizing { cursor: col-resize; user-select: none; }
 
-/* step-through player (player.js) */
+/* step-through player (player.js): the current step's row carries the current-step colour */
 .player { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 6px 0; }
 .player button { padding: 2px 8px; }
 .player-status { color: var(--muted); font-size: 12px; margin-left: 4px; }
 ol.call-tree li { cursor: pointer; border-radius: 3px; }
 ol.call-tree li:hover { background: var(--line); }
-ol.call-tree li.current-step { background: #1565c0; color: #fff; }
-ol.call-tree li.current-step .count, ol.call-tree li.current-step .hint, ol.call-tree li.current-step .trace-error { color: #fff; }
+ol.call-tree li.current-step {
+  background: color-mix(in srgb, var(--current) 18%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--current);
+}
 
 /* diff mode (diff.js) */
-#diff-banner { padding: 6px 12px; background: #e8f5e9; border-bottom: 1px solid #a5d6a7; font-weight: 600; }
+#diff-banner { padding: 6px 12px; background: color-mix(in srgb, var(--added) 16%, var(--surface)); border-bottom: 1px solid var(--added); font-weight: 600; }
 #diff-legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 #diff-legend li { display: flex; align-items: center; gap: 8px; }
-.swatch.status-added { border-color: #2e7d32; background: #e8f5e9; }
-.swatch.status-modified { border-color: #ef6c00; background: #fff3e0; }
-.swatch.status-moved-to { border-color: #6a1b9a; background: #f3e5f5; }
-.swatch.status-removed { border-color: #9e9e9e; border-style: dashed; background: #fafafa; }
-.line.status-added { border-color: #2e7d32; border-top-width: 3px; }
-.line.status-removed { border-color: #9e9e9e; border-top-style: dashed; }
+.swatch.status-added { border-color: var(--added); background: color-mix(in srgb, var(--added) 15%, var(--surface)); }
+.swatch.status-modified { border-color: var(--modified); background: color-mix(in srgb, var(--modified) 15%, var(--surface)); }
+.swatch.status-moved-to { border-color: var(--moved); background: color-mix(in srgb, var(--moved) 15%, var(--surface)); }
+.swatch.status-removed { border-color: var(--removed); border-style: dashed; background: var(--surface); }
+.line.status-added { border-color: var(--added); border-top-width: 3px; }
+.line.status-removed { border-color: var(--removed); border-top-style: dashed; }
 .diff-status { font-weight: 600; }
-.diff-status.status-added { color: #2e7d32; }
-.diff-status.status-modified { color: #ef6c00; }
-.diff-status.status-moved-to, .diff-status.status-moved-from { color: #6a1b9a; }
-.diff-status.status-removed { color: #757575; }
+.diff-status.status-added { color: color-mix(in srgb, var(--added) 75%, var(--ink)); }
+.diff-status.status-modified { color: color-mix(in srgb, var(--modified) 70%, var(--ink)); }
+.diff-status.status-moved-to, .diff-status.status-moved-from { color: color-mix(in srgb, var(--moved) 75%, var(--ink)); }
+.diff-status.status-removed { color: var(--muted); }
 .diff-status a { cursor: pointer; text-decoration: underline dotted; }
 pre.code-diff .row { padding-left: 8px; }
-pre.code-diff .plus { background: #e6ffed; }
-pre.code-diff .minus { background: #ffeef0; }
+pre.code-diff .plus { background: color-mix(in srgb, var(--added) 16%, var(--surface)); }
+pre.code-diff .minus { background: color-mix(in srgb, var(--runtime) 14%, var(--surface)); }
 pre.code-diff .hunk { color: var(--muted); }
