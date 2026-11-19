@@ -8,7 +8,7 @@ A local viewer of a Python package's architecture, and of how real runs move thr
 
 ## Install
 
-GraphCode runs inside the analysed project's environment, so traces can import its libraries:
+To trace, GraphCode must run inside the analysed project's environment, so traces can import its libraries:
 
 ```bash
 cd ~/Codes/MyProject
@@ -17,7 +17,9 @@ uv add --dev --editable ~/Codes/GraphCode
 
 ## Configure
 
-In the project's `pyproject.toml`:
+graphcode needs to know which package to graph. There are two ways to tell it.
+
+### Your own project: settings in `pyproject.toml`
 
 ```toml
 [tool.graphcode]
@@ -29,7 +31,22 @@ dag-and-sample = "scripts.scenarios:dag_and_sample"
 load = { target = "mypackage.io:load", args = ["x.json"] }
 ```
 
-A scenario is an argument-free function written outside the package. It builds what it needs and makes the call to follow.
+This mode does one thing more than the command line: it saves settings. These are `exclude` and the named **scenarios** that `trace @name` and `trace --all` run. A scenario is an argument-free function written outside the package. It builds what it needs and makes the call to follow.
+
+### A project you don't own: settings on the command line
+
+Every command takes `--package` and `--output`, so you can analyse a project without editing or writing into it. graphcode need not be installed there: run it from its own folder.
+
+```bash
+cd ~/Codes/GraphCode
+uv run graphcode view --project ../their-repo --package theirpkg --output ./their-graph --open
+uv run graphcode diff main...feature --project ../their-repo --package theirpkg --output ./their-graph
+```
+
+- `--package` replaces `[tool.graphcode] package`; the project then needs no section, or even no `pyproject.toml`. If the section exists, its `exclude` and scenarios are still used.
+- `--output` replaces `<project>/.graphcode/`. A relative path counts from the folder you run the command in.
+- graphcode puts a `.gitignore` (ignore everything) only in a folder it creates. A folder that already exists, such as `--output .`, is left without one.
+- `build-graph`, `view` and `diff` read the code without running it. `trace` runs the code, so it needs graphcode installed in the project's environment (see Install), and the target is written out in full (`module:function`).
 
 ## Use
 
@@ -48,22 +65,8 @@ uv run graphcode diff main..feature          # the last commits of both
 uv run graphcode diff main --format md       # a Markdown summary, to paste into a pull request
 ```
 
-- Everything is written to `.graphcode/`, which ignores itself in git.
+- Everything is written to `.graphcode/` (or to `--output`), which ignores itself in git.
 - Under WSL, `--open` uses the Windows browser.
-
-## A repository you don't own
-
-Every command takes `--package` and `--output`, so you can analyse a project without editing or writing into it:
-
-```bash
-uv run graphcode view --project ../their-repo --package theirpkg --output ./their-graph --open
-uv run graphcode diff main...feature --project ../their-repo --package theirpkg --output ./their-graph
-```
-
-- `--package` replaces only `[tool.graphcode] package`; the project then needs no section, or even no `pyproject.toml`. If the section exists, its `exclude` and scenarios are still used.
-- `--output` replaces `<project>/.graphcode/`. A relative path counts from the folder you run the command in.
-- graphcode puts a `.gitignore` (ignore everything) only in a folder it creates. A folder that already exists, such as `--output .`, is left without one.
-- `build-graph`, `view` and `diff` read the code without running it, so they work from your own environment. `trace` runs the code, so it still needs graphcode installed in the project's environment.
 
 ## Viewer
 
@@ -114,5 +117,3 @@ In both modes:
 uv run pytest          # tests; tracer tests need Python 3.12+
 uvx ruff check src tests
 ```
-
-The design and the roadmap are in `Python Architecture Viewer — Design Brief.md`.
