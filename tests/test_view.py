@@ -58,6 +58,31 @@ def test_cli_build_graph_and_view(project: Path, capsys: pytest.CaptureFixture[s
     assert set(data["sources"]) == {node["file"] for node in data["graph"]["nodes"]}
 
 
+def test_cli_view_a_project_you_do_not_own(
+    project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--package`` and ``--output``: no ``[tool.graphcode]`` needed, nothing written in the project."""
+    pyproject = project / "pyproject.toml"
+    pyproject.write_text(pyproject.read_text().split("[tool.graphcode]")[0], encoding="utf-8")
+    shutil.rmtree(project / ".graphcode", ignore_errors=True)  # a copy of a leftover from manual runs
+    output = tmp_path / "elsewhere" / "graph-output"  # parent folders are created too
+    arguments = ["view", "--project", str(project), "--package", "sample", "--output", str(output)]
+    assert main(arguments) == 0
+    assert f"viewer -> {output / 'viewer.html'}" in capsys.readouterr().out
+    assert len(embedded_data((output / "viewer.html").read_text(encoding="utf-8"))["graph"]["nodes"]) == 33
+    assert not (project / ".graphcode").exists()
+    assert (output / ".gitignore").read_text() == "*\n"  # graphcode created this folder
+
+
+def test_cli_leaves_an_existing_output_folder_without_gitignore(
+    project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--output`` naming an existing folder (here the project itself) adds no ``.gitignore`` there."""
+    assert main(["build-graph", "--project", str(project), "--output", str(project)]) == 0
+    assert (project / "graph.json").exists()
+    assert not (project / ".gitignore").exists()
+
+
 def test_cli_reports_configuration_errors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """A project without configuration exits with 1 and a message, not a traceback."""
     assert main(["build-graph", "--project", str(tmp_path)]) == 1

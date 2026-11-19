@@ -3,10 +3,12 @@
 Two halves of one hand-over:
 
 - :func:`trace_in_child` (in the ``graphcode`` command) starts
-  ``python -m graphcode.trace.runner <project> <target as JSON>`` with the
-  same interpreter, in the project folder;
+  ``python -m graphcode.trace.runner <project> <target as JSON> <package> <output>``
+  with the same interpreter, in the project folder (``<package>`` is the
+  package to graph and ``<output>`` the ``--output`` folder; empty means "as in
+  pyproject.toml" and ``<project>/.graphcode/``);
 - :func:`main` (in that new process) records the call and writes
-  ``.graphcode/traces/<name>.json``.
+  ``<output folder>/traces/<name>.json``.
 
 A fresh process per trace means every scenario starts from the same clean
 state, and a crash or ``sys.exit`` in the scenario cannot hurt ``graphcode``.
@@ -22,7 +24,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from graphcode.config import OUTPUT_FOLDER, ConfigError, load_config
+from graphcode.config import ConfigError, load_config
 from graphcode.keys import module_name_from_path
 from graphcode.sources import SourceError, find_package_files, git_state
 from graphcode.trace.format import trace_file_for, write_trace
@@ -33,10 +35,38 @@ GRAPH_FILE = "graph.json"  # must match graphcode.cli.GRAPH_FILE (trace does not
 TRACES_FOLDER = "traces"
 
 
-def trace_in_child(project_root: Path, target: TraceTarget) -> int:
-    """Trace ``target`` in a new Python process; return its exit code (0: trace written)."""
+def trace_in_child(
+    project_root: Path, target: TraceTarget, package: str | None = None, output_folder: Path | None = None
+) -> int:
+    """Trace ``target`` in a new Python process; return its exit code (0: trace written).
+
+    Parameters
+    ----------
+    project_root : Path
+        Folder of the analysed project; the new process runs there.
+    target : TraceTarget
+        The call to record.
+    package : str or None
+        The package to graph, passed on to the new process; None: as in pyproject.toml.
+    output_folder : Path or None
+        The ``--output`` override; made absolute here, since the new process
+        runs in another folder.
+
+    Returns
+    -------
+    int
+        The new process's exit code, or 1 if it was killed by a signal.
+    """
     project_root = project_root.resolve()
-    command = [sys.executable, "-m", "graphcode.trace.runner", str(project_root), _target_to_json(target)]
+    command = [
+        sys.executable,
+        "-m",
+        "graphcode.trace.runner",
+        str(project_root),
+        _target_to_json(target),
+        package or "",  # an empty word means "no override"
+        "" if output_folder is None else str(output_folder.resolve()),
+    ]
     # The child's output (the scenario's prints, then the summary) goes straight to the terminal.
     process = subprocess.Popen(command, cwd=project_root)
     try:
@@ -51,10 +81,27 @@ def trace_in_child(project_root: Path, target: TraceTarget) -> int:
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
-    """Entry point of the new process: ``<project root> <target as JSON>``."""
-    project_text, target_text = sys.argv[1:] if arguments is None else arguments
+    """Entry point of the new process: ``<project root> <target as JSON> <package> <output>``.
+
+    Parameters
+    ----------
+    arguments : sequence of str or None
+        The four words; None reads them from ``sys.argv``. An empty
+        ``<package>`` or ``<output>`` means "no override".
+
+    Returns
+    -------
+    int
+        0 if the trace was written, 1 if the configuration or target is invalid.
+    """
+    project_text, target_text, package_text, output_text = sys.argv[1:] if arguments is None else arguments
     try:
-        path, summary = run_trace(Path(project_text), _target_from_json(target_text))
+        path, summary = run_trace(
+            Path(project_text),
+            _target_from_json(target_text),
+            package=package_text or None,
+            output_folder=Path(output_text) if output_text else None,
+        )
     except (ConfigError, SourceError, TargetError, TraceError) as error:
         print(f"graphcode trace: {error}", file=sys.stderr)
         return 1
@@ -62,8 +109,21 @@ def main(arguments: Sequence[str] | None = None) -> int:
     return 0
 
 
-def run_trace(project_root: Path, target: TraceTarget) -> tuple[Path, str]:
+def run_trace(
+    project_root: Path, target: TraceTarget, package: str | None = None, output_folder: Path | None = None
+) -> tuple[Path, str]:
     """Record ``target`` in this process and write its trace file.
+
+    Parameters
+    ----------
+    project_root : Path
+        Folder of the analysed project.
+    target : TraceTarget
+        The call to record.
+    package : str or None
+        The ``--package`` override (see ``config.load_config``).
+    output_folder : Path or None
+        The ``--output`` override (see ``config.load_config``).
 
     Returns
     -------
@@ -80,7 +140,7 @@ def run_trace(project_root: Path, target: TraceTarget) -> tuple[Path, str]:
         If tracing is impossible (Python before 3.12, async code).
     """
     project_root = project_root.resolve()
-    config = load_config(project_root)
+    config = load_config(project_root, package, output_folder)
     layout = find_package_files(project_root, config.package, config.exclude)
     source_root = project_root / layout.source_root
     # Imports must find the package (src/ layout) and scenario scripts (project
@@ -106,18 +166,18 @@ def run_trace(project_root: Path, target: TraceTarget) -> tuple[Path, str]:
 
 
 def _graph_keys(graph_path: Path) -> tuple[frozenset[str], str]:
-    """Return the node keys of ``graph.json`` and a note if it is missing or unreadable.
+    """Return the node keys of ``graph.json`` and a note naming it if it is missing or unreadable.
 
     Read as plain JSON rather than through ``graph``: ``trace`` never imports ``graph``.
     Without a graph the trace is still recorded, its steps simply not matched.
     """
     if not graph_path.is_file():
-        return frozenset(), f"; no {OUTPUT_FOLDER}/{GRAPH_FILE}: steps not matched to the graph"
+        return frozenset(), f"; no {graph_path}: steps not matched to the graph"
     try:
         nodes = json.loads(graph_path.read_text(encoding="utf-8"))["nodes"]
         return frozenset(node["key"] for node in nodes), ""
     except (OSError, ValueError, KeyError, TypeError) as error:  # ValueError covers bad JSON and UTF-8
-        return frozenset(), f"; {OUTPUT_FOLDER}/{GRAPH_FILE} unreadable ({error!r}): steps not matched"
+        return frozenset(), f"; {graph_path} unreadable ({error!r}): steps not matched"
 
 
 def _summary(steps: Sequence[TraceStep], truncated: bool, error: str | None, graph_note: str) -> str:

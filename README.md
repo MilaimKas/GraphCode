@@ -51,6 +51,20 @@ uv run graphcode diff main --format md       # a Markdown summary, to paste into
 - Everything is written to `.graphcode/`, which ignores itself in git.
 - Under WSL, `--open` uses the Windows browser.
 
+## A repository you don't own
+
+Every command takes `--package` and `--output`, so you can analyse a project without editing or writing into it:
+
+```bash
+uv run graphcode view --project ../their-repo --package theirpkg --output ./their-graph --open
+uv run graphcode diff main...feature --project ../their-repo --package theirpkg --output ./their-graph
+```
+
+- `--package` replaces only `[tool.graphcode] package`; the project then needs no section, or even no `pyproject.toml`. If the section exists, its `exclude` and scenarios are still used.
+- `--output` replaces `<project>/.graphcode/`. A relative path counts from the folder you run the command in.
+- graphcode puts a `.gitignore` (ignore everything) only in a folder it creates. A folder that already exists, such as `--output .`, is left without one.
+- `build-graph`, `view` and `diff` read the code without running it, so they work from your own environment. `trace` runs the code, so it still needs graphcode installed in the project's environment.
+
 ## Viewer
 
 Two modes, switched with **Classic | Network** in the toolbar:

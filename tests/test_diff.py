@@ -229,6 +229,15 @@ def test_cli_diff_prints_the_markdown_summary(repository: Path, capsys: pytest.C
     assert "No structural change" in capsys.readouterr().out
 
 
+def test_cli_diff_with_an_output_folder(repository: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """``--output`` holds the commit graph cache and the diff page; the repository gets no ``.graphcode/``."""
+    output = tmp_path / "diff-output"
+    assert cli_main(["diff", "--project", str(repository), "--output", str(output), "v1"]) == 0
+    assert str(output / "diff-v1-worktree.html") in capsys.readouterr().out
+    assert list((output / "cache").glob("*.json"))
+    assert not (repository / ".graphcode").exists()
+
+
 def test_cli_diff_unknown_ref(repository: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """An unknown ref is a one-line error and exit code 1."""
     assert cli_main(["diff", "--project", str(repository), "nope"]) == 1

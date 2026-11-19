@@ -117,6 +117,22 @@ def test_src_layout_without_a_graph(tmp_path: Path, capfd: pytest.CaptureFixture
     ]
 
 
+def test_overrides_reach_the_new_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """``--package`` and a relative ``--output`` are passed on: the project needs no section and stays untouched."""
+    project = tmp_path / "theirs"
+    (project / "theirpkg").mkdir(parents=True)
+    (project / "pyproject.toml").write_text("[project]\nname = 'theirs'\n", encoding="utf-8")
+    (project / "theirpkg" / "__init__.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)  # "out" is relative to here, not to the project
+    target = TraceTarget("run", "theirpkg:run")
+    assert trace_in_child(project, target, package="theirpkg", output_folder=Path("out")) == 0
+    assert f"no {tmp_path / 'out' / 'graph.json'}" in capfd.readouterr().out  # the note names the chosen folder
+    assert [step.key for step in read_trace(tmp_path / "out" / "traces" / "run.json").steps] == ["theirpkg:run"]
+    assert not (project / ".graphcode").exists()
+
+
 def test_a_wrong_target_writes_nothing(project: Path, capfd: pytest.CaptureFixture[str]) -> None:
     """A target that cannot be found stops before running, with exit code 1 and a message."""
     assert trace_in_child(project, TraceTarget("missing", "scripts.scenarios:missing")) == 1
@@ -143,6 +159,19 @@ def test_cli_trace_all_scenarios(project: Path, capfd: pytest.CaptureFixture[str
     """``--all`` writes one trace per scenario of pyproject.toml."""
     assert cli_main(["trace", "--project", str(project), "--all"]) == 0
     assert sorted(path.name for path in (project / ".graphcode" / "traces").iterdir()) == ["cli.json", "noise.json"]
+
+
+def test_cli_trace_passes_the_overrides(project: Path, tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
+    """``trace --package --output``: the graph and the trace go to the chosen folder, matched to each other."""
+    pyproject = project / "pyproject.toml"  # keep the scenarios, drop the package: --package must supply it
+    pyproject.write_text(pyproject.read_text().replace('package = "sample"\n', ""), encoding="utf-8")
+    shutil.rmtree(project / ".graphcode")  # built by the fixture: the trace must use the chosen folder's graph
+    output = tmp_path / "graph-output"
+    arguments = ["trace", "--project", str(project), "--package", "sample", "--output", str(output)]
+    assert cli_main([*arguments, "@noise"]) == 0
+    assert "5 steps ->" in capfd.readouterr().out  # no "not matched" note: the graph was found in output
+    assert all(step.matched for step in read_trace(output / "traces" / "noise.json").steps)
+    assert (output / "graph.json").exists() and not (project / ".graphcode").exists()
 
 
 @pytest.mark.parametrize(

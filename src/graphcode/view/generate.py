@@ -2,7 +2,7 @@
 
 The page inlines the vendored JavaScript (Cytoscape and its plugins), the
 viewer's own scripts and style, the graph, every trace of
-``.graphcode/traces/``, and the text of every source file (each embedded
+``<output folder>/traces/``, and the text of every source file (each embedded
 once; the code panel slices a definition's span out of it).
 
 By the package's dependency rule, ``view`` imports neither ``graph`` nor

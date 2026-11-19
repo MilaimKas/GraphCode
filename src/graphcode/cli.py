@@ -1,7 +1,13 @@
 """Command line: ``graphcode build-graph``, ``view``, ``trace`` and ``diff``.
 
 All read ``[tool.graphcode]`` from the project's ``pyproject.toml`` and
-write into ``<project>/.graphcode/``. Examples of ``trace``::
+write into the output folder, ``<project>/.graphcode/`` by default. To
+analyse a repository you don't own without touching it, give the package
+and an output folder on the command line::
+
+    graphcode view --project ../their-repo --package theirpkg --output ./their-graph --open
+
+Examples of ``trace``::
 
     graphcode trace datagenerator.dag:load --args '["x.json"]'
     graphcode trace datagenerator.cli:main -- --rows 10
@@ -61,7 +67,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser = _parser()
     options = parser.parse_args(words)
     try:
-        config = load_config(options.project.resolve())
+        config = load_config(options.project.resolve(), options.package, options.output)
         if options.command == "build-graph":
             _build(config)
         elif options.command == "view":
@@ -81,13 +87,17 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="graphcode", description="View a Python package's architecture.")
     commands = parser.add_subparsers(dest="command", required=True)
     for name, help_text in (
-        ("build-graph", f"extract the structure graph into .graphcode/{GRAPH_FILE}"),
-        ("view", f"write .graphcode/{VIEWER_FILE} (rebuilding the graph first)"),
-        ("trace", "record which package functions a call runs, into .graphcode/traces/"),
+        ("build-graph", f"extract the structure graph into <output folder>/{GRAPH_FILE}"),
+        ("view", f"write <output folder>/{VIEWER_FILE} (rebuilding the graph first)"),
+        ("trace", "record which package functions a call runs, into <output folder>/traces/"),
         ("diff", "show how the graph changes between two versions (refs read from git)"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--project", type=Path, default=Path("."), help="project folder (default: current)")
+        command.add_argument("--package", help="import name of the package to graph (overrides [tool.graphcode])")
+        command.add_argument(
+            "--output", type=Path, help="folder for the generated files (default: <project>/.graphcode/)"
+        )
     view = commands.choices["view"]
     view.add_argument("--no-build", action="store_true", help=f"use the existing {GRAPH_FILE}")
     view.add_argument("--open", action="store_true", help="open the page in the default browser")
@@ -103,21 +113,27 @@ def _parser() -> argparse.ArgumentParser:
     diff.add_argument(
         "range", help="<ref> (vs the working tree), <ref>..<ref> (both last commits) or <ref>...<ref> (since the branch point)"
     )
-    diff.add_argument("--no-cache", action="store_true", help="rebuild commit graphs instead of reusing .graphcode/cache/")
+    diff.add_argument("--no-cache", action="store_true", help="rebuild commit graphs instead of reusing <output folder>/cache/")
     diff.add_argument(
         "--format", choices=["html", "md"], default="html",
-        help="html: write .graphcode/diff-<base>-<head>.html (default); md: print a Markdown summary",
+        help="html: write <output folder>/diff-<base>-<head>.html (default); md: print a Markdown summary",
     )
     diff.add_argument("--open", action="store_true", help="open the diff page in the browser")
     return parser
 
 
 def _prepare_output_folder(config: GraphCodeConfig) -> Path:
-    """Create ``.graphcode/`` with a ``.gitignore`` so its content is not committed."""
+    """Create the output folder, with a ``.gitignore`` so its content is not committed.
+
+    The ``.gitignore`` (``*``: ignore everything) goes only into ``.graphcode/``
+    or into a chosen folder created here: written into an existing folder such
+    as ``--output .``, it would make git ignore a whole repository.
+    """
     folder = config.output_folder
-    folder.mkdir(exist_ok=True)
+    created_here = not folder.exists()
+    folder.mkdir(parents=True, exist_ok=True)  # a chosen --output may be several levels deep
     ignore_file = folder / ".gitignore"
-    if not ignore_file.exists():
+    if (config.chosen_output_folder is None or created_here) and not ignore_file.exists():
         ignore_file.write_text("*\n", encoding="utf-8")
     return folder
 
@@ -179,7 +195,9 @@ def _trace(config: GraphCodeConfig, targets: list[TraceTarget], rebuild: bool) -
     """
     if rebuild or not (config.output_folder / GRAPH_FILE).exists():
         _build(config)
-    exit_codes = [trace_in_child(config.project_root, target) for target in targets]
+    exit_codes = [
+        trace_in_child(config.project_root, target, config.package, config.chosen_output_folder) for target in targets
+    ]
     return max(exit_codes)
 
 
@@ -189,7 +207,7 @@ def _diff(config: GraphCodeConfig, options: argparse.Namespace, parser: argparse
         versions = parse_range(options.range)
     except ValueError as error:
         parser.error(str(error))
-    _prepare_output_folder(config)  # the commit graph cache lives in .graphcode/cache/
+    _prepare_output_folder(config)  # the commit graph cache lives in <output folder>/cache/
     before = base_ref(config, versions)
     base = graph_at(config, before, not options.no_cache)
     head = graph_at(config, versions.head, not options.no_cache)

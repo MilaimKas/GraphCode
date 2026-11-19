@@ -52,6 +52,7 @@ def test_scenarios_table_is_passed_on(tmp_path: Path) -> None:
     [
         (None, "no pyproject.toml"),
         ("[project]\nname = 'x'\n", "no \\[tool.graphcode\\] section"),
+        ("[tool.graphcode]\n", "has no package"),
         ("[tool.graphcode]\npackage = 'a.b'\n", "top-level import name"),
         ("[tool.graphcode]\npackage = 'a'\nexclude = 'a/x'\n", "list of paths"),
         ("[tool.graphcode\n", "cannot read"),
@@ -64,6 +65,42 @@ def test_invalid_config(tmp_path: Path, pyproject: str | None, message: str) -> 
         (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
     with pytest.raises(ConfigError, match=message):
         load_config(tmp_path)
+
+
+def test_package_override_needs_no_pyproject(tmp_path: Path) -> None:
+    """``--package`` works in a folder without ``pyproject.toml``, with default settings."""
+    config = load_config(tmp_path, package="other")
+    assert (config.package, config.exclude, config.scenarios) == ("other", (), {})
+
+
+def test_package_override_without_section(tmp_path: Path) -> None:
+    """A repository you don't own: a ``pyproject.toml`` without the section, plus ``--package``."""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'theirs'\n", encoding="utf-8")
+    assert load_config(tmp_path, package="theirs").package == "theirs"
+
+
+def test_package_override_keeps_the_other_settings(tmp_path: Path) -> None:
+    """Only ``package`` is replaced; ``exclude`` and ``scenarios`` are still read."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.graphcode]\npackage = "a"\nexclude = ["a/old/"]\n[tool.graphcode.scenarios]\nsmall = "s:f"\n',
+        encoding="utf-8",
+    )
+    config = load_config(tmp_path, package="b")
+    assert (config.package, config.exclude, config.scenarios) == ("b", ("a/old",), {"small": "s:f"})
+
+
+def test_invalid_package_override(tmp_path: Path) -> None:
+    """A dotted ``--package`` is refused like a dotted setting."""
+    with pytest.raises(ConfigError, match="top-level import name"):
+        load_config(tmp_path, package="a.b")
+
+
+def test_output_override_is_absolute(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A relative ``--output`` is taken from the current folder, not from the project."""
+    monkeypatch.chdir(tmp_path)
+    config = load_config(FIXTURE_ROOT, output_folder=Path("out"))
+    assert config.output_folder == tmp_path / "out"
+    assert load_config(FIXTURE_ROOT).output_folder == FIXTURE_ROOT / ".graphcode"
 
 
 # --- sources -------------------------------------------------------------------

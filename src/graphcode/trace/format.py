@@ -1,4 +1,4 @@
-"""Reading and writing trace files (``.graphcode/traces/<scenario>.json``).
+"""Reading and writing trace files (``<output folder>/traces/<scenario>.json``).
 
 Reading checks the structure (version, fields, the tree of steps), so a
 damaged file fails here with one error type, :class:`TraceFormatError`.

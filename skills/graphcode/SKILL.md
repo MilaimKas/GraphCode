@@ -27,6 +27,8 @@ You read the JSON files. You point the human at the page.
   load = { target = "mypackage.io:load", args = ["x.json"] }
   ```
 
+- **A project you must not modify** (no section, someone else's repository): add `--package <import name> --output <folder outside it>` to every command, for example `graphcode view --project ../their-repo --package theirpkg --output ./their-graph`. Then read the files from that folder instead of `.graphcode/`. Only `trace` needs graphcode inside that project's environment; ask the human before installing it there.
+
 ## Answer a structure question
 
 1. Run `uv run graphcode build-graph`. It is fast, so rebuild before reading, since `graph.json` may be stale.

@@ -7,7 +7,7 @@ Ranges mean what they mean for ``git diff``::
     main...feature   where feature left main vs feature's last commit: what the branch
                      itself changed, as a pull request shows it
 
-A commit never changes, so its graph is cached in ``.graphcode/cache/``. The file
+A commit never changes, so its graph is cached in ``<output folder>/cache/``. The file
 name also encodes what else shapes the graph (graphcode version, fingerprint
 scheme, ``package`` and ``exclude``), so changing any of them builds a fresh
 graph. The working tree changes all the time and is never cached.
