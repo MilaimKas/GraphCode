@@ -100,6 +100,30 @@ In both modes:
   - a before/after code diff in the panel.
 - Commit graphs are cached in `.graphcode/cache/`. Use `--no-cache` to rebuild them.
 
+Example: GraphCode's own commit that added `--package` and `--output` (`graphcode diff e49271f~1..e49271f --package graphcode`). `load_config` is modified (orange) and now calls the new `_read_section` (green, with green call edges). The panel shows its code diff.
+
+<img src="docs/images/diff-page.png" width="800" alt="The diff page: the changed config module, and the code diff of load_config">
+
+The same diff with `--format md`, shortened:
+
+```markdown
+## graphcode diff: e49271f~1 (f001b01) → e49271f (e49271f)
+
+1 added · 0 removed · 12 modified · 0 moved · 2 edges added · 0 removed
+
+### Added
+- `graphcode.config:_read_section` (function)
+
+### Modified
+- `graphcode.cli:_prepare_output_folder` (function)
+- `graphcode.config:load_config` (function)
+- …
+
+### Edges added
+- `graphcode.config:load_config` → `graphcode.config:_read_section` (calls)
+- …
+```
+
 ## Good to know
 
 - **Static calls are partial.** Calls through untyped values are missing, for example `node.noise.sample()`. Traces show them.
